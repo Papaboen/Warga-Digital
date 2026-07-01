@@ -1,0 +1,40 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Lexend:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-headline: "Lexend", sans-serif;
+  --font-body: "Inter", sans-serif;
+  
+  --color-primary: #005146;
+  --color-on-primary: #ffffff;
+  --color-primary-container: #006b5d;
+  --color-on-primary-container: #95e8d6;
+  
+  --color-secondary: #0040e0;
+  --color-on-secondary: #ffffff;
+  --color-secondary-container: #2e5bff;
+  --color-on-secondary-container: #efefff;
+  
+  --color-background: #f8f9ff;
+  --color-on-background: #0b1c30;
+  
+  --color-surface: #f8f9ff;
+  --color-on-surface: #0b1c30;
+  --color-surface-variant: #d3e4fe;
+  --color-on-surface-variant: #3e4946;
+  
+  --color-error: #ba1a1a;
+  --color-on-error: #ffffff;
+  --color-error-container: #ffdad6;
+  --color-on-error-container: #93000a;
+}
+
+/* Custom styles for virtual phone preview */
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+

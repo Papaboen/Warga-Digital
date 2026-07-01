@@ -1,0 +1,6 @@
+{
+  "name": "CivicConnect",
+  "description": "A digital public square app for neighborhood coordination, finances, reports, and resident validations.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
