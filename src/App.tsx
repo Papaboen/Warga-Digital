@@ -46,23 +46,29 @@ import {
   Coins,
   LogOut,
   LogIn,
-  UserPlus
+  UserPlus,
+  Megaphone
 } from 'lucide-react';
 import { db, bootstrapDatabase, initialResidents, initialTransactions, initialReports, initialInfos } from './firebase';
 import { Resident, Transaction, Report, Info } from './types';
+import { WargaDigitalLogo } from './components/WargaDigitalLogo';
 
 export default function App() {
   // Application Roles and Routing
   // role: 'warga' | 'admin'
   const [role, setRole] = useState<'warga' | 'admin'>('warga');
   // isLoggedIn: simulates session
-  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(true);
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
+  // appPortal: 'selection' | 'warga' | 'admin' - Completely separated apps
+  const [appPortal, setAppPortal] = useState<'selection' | 'warga' | 'admin'>('selection');
   
   // Warga screen states
   // wargaTab: 'home' | 'finances' | 'report' | 'wallet'
   const [wargaTab, setWargaTab] = useState<'home' | 'finances' | 'report' | 'wallet'>('home');
   // Current active announcement for reader modal
   const [selectedInfo, setSelectedInfo] = useState<Info | null>(null);
+  // Filter for news/information on citizen dashboard
+  const [citizenInfoFilter, setCitizenInfoFilter] = useState<'semua' | 'penting' | 'umum' | 'kegiatan'>('semua');
 
   // Admin RT screen states
   // adminTab: 'dashboard' | 'validation' | 'finance' | 'news'
@@ -102,11 +108,14 @@ export default function App() {
   const [infoCategory, setInfoCategory] = useState<'penting' | 'umum' | 'kegiatan'>('umum');
   const [infoContent, setInfoContent] = useState<string>('');
   const [infoNotify, setInfoNotify] = useState<boolean>(true);
+  const [infoImage, setInfoImage] = useState<string>('');
+  const [isDraggingInfo, setIsDraggingInfo] = useState<boolean>(false);
 
   // Form Inputs: Buat Laporan Baru (Warga)
   const [reportCategory, setReportCategory] = useState<'pengaduan' | 'surat' | 'iuran'>('pengaduan');
   const [reportDetail, setReportDetail] = useState<string>('');
   const [reportFile, setReportFile] = useState<string>('');
+  const [isDragging, setIsDragging] = useState<boolean>(false);
 
   // Authentication & Session States
   const [authTab, setAuthTab] = useState<'login' | 'signup'>('login');
@@ -121,6 +130,7 @@ export default function App() {
   const [signupRole, setSignupRole] = useState<'warga' | 'admin'>('warga');
   const [loggedInResidentName, setLoggedInResidentName] = useState<string>('Siti Nurhaliza');
   const [loggedInResidentBlock, setLoggedInResidentBlock] = useState<string>('Blok A/12');
+  const [loginError, setLoginError] = useState<string | null>(null);
 
   // Wallet filters
   const [walletFilter, setWalletFilter] = useState<'semua' | 'berhasil' | 'menunggu'>('semua');
@@ -321,26 +331,159 @@ export default function App() {
       title: infoTitle,
       category: infoCategory,
       content: infoContent,
-      imageUrl: 'https://images.unsplash.com/photo-1557804506-669a67965ba0?q=80&w=600&auto=format&fit=crop',
+      imageUrl: infoImage || 'https://images.unsplash.com/photo-1557804506-669a67965ba0?q=80&w=600&auto=format&fit=crop',
       isNotified: infoNotify,
       isDraft,
       createdAt: new Date().toISOString()
     };
 
+    // Optimistic local update to ensure instant response
+    const tempId = `inf_temp_${Date.now()}`;
+    setInfos(prev => [{ id: tempId, ...newInfo } as Info, ...prev]);
+
+    // Reset Form & switch tab immediately
+    setInfoTitle('');
+    setInfoContent('');
+    setInfoImage('');
+    setInfoCategory('umum');
+    setInfoNotify(true);
+    setAdminTab('dashboard');
+
     try {
       setSyncStatus('syncing');
-      await addDoc(collection(db, 'infos'), newInfo);
-      addLog(`Pengumuman diterbitkan: "${infoTitle}"`);
-      
-      // Reset Form
-      setInfoTitle('');
-      setInfoContent('');
-      setAdminTab('dashboard');
+      addDoc(collection(db, 'infos'), newInfo)
+        .then(() => {
+          setSyncStatus('connected');
+          addLog(`Pengumuman berhasil diterbitkan: "${newInfo.title}"`);
+        })
+        .catch((error) => {
+          console.error("Gagal menyimpan ke Firestore:", error);
+          setSyncStatus('connected');
+          addLog(`Pengumuman disimpan lokal (offline): "${newInfo.title}"`);
+        });
     } catch (error) {
-      const mockId = `inf_${Date.now()}`;
-      setInfos(prev => [{ id: mockId, ...newInfo } as Info, ...prev]);
-      addLog(`[Lokal] Pengumuman diterbitkan: "${infoTitle}"`);
-      setAdminTab('dashboard');
+      console.error("Gagal memproses pengiriman:", error);
+      addLog(`[Lokal] Pengumuman disimpan: "${newInfo.title}"`);
+    }
+  };
+
+  const compressAndSetImage = (file: File, callback: (base64: string) => void) => {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+
+        const MAX_DIM = 600;
+        if (width > height) {
+          if (width > MAX_DIM) {
+            height = Math.round((height * MAX_DIM) / width);
+            width = MAX_DIM;
+          }
+        } else {
+          if (height > MAX_DIM) {
+            width = Math.round((width * MAX_DIM) / height);
+            height = MAX_DIM;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
+          callback(compressedBase64);
+        } else {
+          callback(event.target?.result as string);
+        }
+      };
+      img.onerror = () => {
+        callback(event.target?.result as string);
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleInfoImageChange = (file: File) => {
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      alert("Ukuran berkas terlalu besar. Maksimal 10MB.");
+      return;
+    }
+    
+    // Check if it's an image
+    if (!file.type.startsWith('image/')) {
+      alert("Hanya berkas gambar (JPG, PNG) yang diperbolehkan.");
+      return;
+    }
+
+    addLog(`Sedang memproses poster "${file.name}"...`);
+    compressAndSetImage(file, (compressedBase64) => {
+      setInfoImage(compressedBase64);
+      addLog(`File poster "${file.name}" berhasil diunggah & dikompresi.`);
+    });
+  };
+
+  const handleFileChange = (file: File) => {
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      alert("Ukuran berkas terlalu besar. Maksimal 10MB.");
+      return;
+    }
+    
+    // Check if it's an image
+    if (!file.type.startsWith('image/')) {
+      alert("Hanya berkas gambar (JPG, PNG) yang diperbolehkan.");
+      return;
+    }
+
+    addLog(`Sedang memproses lampiran "${file.name}"...`);
+    compressAndSetImage(file, (compressedBase64) => {
+      setReportFile(compressedBase64);
+      addLog(`File "${file.name}" berhasil diunggah & dikompresi.`);
+    });
+  };
+
+  const handleDownloadRekap = () => {
+    try {
+      // CSV Header with BOM for correct Indonesian characters & Excel parsing
+      let csvContent = "\uFEFF";
+      csvContent += "No;Tanggal;Kategori;Jumlah;Status;Deskripsi\n";
+
+      filteredWalletTxs.forEach((tx, idx) => {
+        const dateStr = new Date(tx.date).toLocaleDateString('id-ID', {
+          day: 'numeric',
+          month: 'long',
+          year: 'numeric'
+        });
+        const amountStr = `Rp ${tx.amount.toLocaleString('id-ID')}`;
+        const statusStr = tx.category.includes('Sumbangan') ? 'Menunggu Verifikasi' : 'Berhasil';
+        
+        // Escape semicolons, quotes, and newlines
+        const cleanCategory = tx.category.replace(/"/g, '""').replace(/;/g, ',');
+        const cleanDesc = (tx.description || '').replace(/"/g, '""').replace(/;/g, ',').replace(/\n/g, ' ');
+
+        csvContent += `${idx + 1};"${dateStr}";"${cleanCategory}";"${amountStr}";"${statusStr}";"${cleanDesc}"\n`;
+      });
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `Rekap_Iuran_${loggedInResidentName || 'Warga'}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      
+      addLog(`Mengunduh rekap iuran: ${filteredWalletTxs.length} transaksi.`);
+    } catch (err) {
+      console.error("Gagal mengunduh rekap:", err);
+      alert("Gagal mengunduh rekap keuangan.");
     }
   };
 
@@ -364,7 +507,8 @@ export default function App() {
       status: 'pending',
       submittedAt: 'Baru saja',
       title: titleMap[reportCategory],
-      blockAndNo: 'Blok A, No. 12'
+      blockAndNo: loggedInResidentBlock || 'Blok A, No. 12',
+      photoUrl: reportFile || undefined
     };
 
     try {
@@ -373,12 +517,14 @@ export default function App() {
       addLog(`Laporan Terkirim: ${titleMap[reportCategory]}`);
       
       setReportDetail('');
+      setReportFile('');
       alert('Laporan Anda telah berhasil terkirim dan disinkronisasikan ke RT Admin secara real-time!');
     } catch (error) {
       const mockId = `rep_${Date.now()}`;
       setReports(prev => [{ id: mockId, ...newReport } as Report, ...prev]);
       addLog(`[Lokal] Laporan Terkirim: ${titleMap[reportCategory]}`);
       setReportDetail('');
+      setReportFile('');
     }
   };
 
@@ -438,11 +584,41 @@ export default function App() {
     .filter(tx => tx.type === 'pengeluaran')
     .reduce((acc, curr) => acc + curr.amount, 4250000);
 
+  // Dynamic Iuran statistics for citizen "Siti Nurhaliza"
+  const approvedKekurangan = transactions
+    .filter(tx => tx.category === 'Kekurangan Iuran Keamanan Mar 2024' && tx.status === 'approved')
+    .reduce((sum, tx) => sum + tx.amount, 0);
+
+  const sudahBayarHome = 150000 + approvedKekurangan;
+  const belumBayarHome = Math.max(0, 50000 - approvedKekurangan);
+  const totalHome = sudahBayarHome + belumBayarHome;
+  const progressPercentage = totalHome > 0 ? Math.round((sudahBayarHome / totalHome) * 100) : 0;
+
+  const hasPendingKekurangan = transactions.some(
+    tx => tx.category === 'Kekurangan Iuran Keamanan Mar 2024' && tx.status === 'pending'
+  );
+
+  const totalIuranTahunIni = transactions
+    .filter(tx => tx.type === 'pemasukan' && 
+                  (tx.status === 'approved' || !tx.status) && 
+                  (tx.residentName === loggedInResidentName || !tx.residentName) &&
+                  tx.id !== 'tx_1' && tx.id !== 'tx_4')
+    .reduce((sum, tx) => sum + tx.amount, 0);
+
   // Filter lists based on components input
   const filteredWalletTxs = transactions.filter((tx) => {
+    // Only show citizen's dues/pemasukan
+    if (tx.type !== 'pemasukan') return false;
+    
+    // Hide collective or other citizens' dues
+    if (tx.residentName && tx.residentName !== loggedInResidentName) return false;
+    
+    // Exclude general collective administration entries
+    if (tx.id === 'tx_1' || tx.id === 'tx_4') return false;
+
     if (walletFilter === 'semua') return true;
-    if (walletFilter === 'berhasil') return tx.type === 'pemasukan' && tx.status !== 'pending' && tx.status !== 'rejected' && !tx.category.includes('Sumbangan');
-    if (walletFilter === 'menunggu') return tx.status === 'pending' || tx.category.includes('Sumbangan') || tx.category.includes('Apr');
+    if (walletFilter === 'berhasil') return tx.status === 'approved' || !tx.status;
+    if (walletFilter === 'menunggu') return tx.status === 'pending';
     return true;
   });
 
@@ -505,32 +681,28 @@ export default function App() {
           </p>
         </div>
 
-        {/* Role Switcher */}
-        <div className="flex flex-col gap-2">
-          <label className="text-xs font-semibold tracking-wider text-slate-400 uppercase">Pilih Mode Tampilan</label>
-          <div className="grid grid-cols-2 gap-2 bg-slate-950 p-1.5 rounded-xl border border-slate-800">
-            <button
-              onClick={() => { setRole('warga'); setIsLoggedIn(true); }}
-              className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-xs font-semibold transition-all duration-300 ${
-                role === 'warga' && isLoggedIn
-                  ? 'bg-primary text-white shadow-md shadow-primary/20'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-              }`}
-            >
-              <User className="w-4 h-4" />
-              Warga (Citizen)
-            </button>
-            <button
-              onClick={() => { setRole('admin'); setIsLoggedIn(true); }}
-              className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-xs font-semibold transition-all duration-300 ${
-                role === 'admin' && isLoggedIn
-                  ? 'bg-primary text-white shadow-md shadow-primary/20'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-              }`}
-            >
-              <Shield className="w-4 h-4" />
-              Admin RT
-            </button>
+        {/* Active Application Status */}
+        <div className="flex flex-col gap-2.5 bg-slate-950 p-4 rounded-xl border border-slate-800">
+          <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Aplikasi Aktif di Simulator</span>
+          <div className="flex items-center gap-2.5">
+            {isLoggedIn ? (
+              role === 'warga' ? (
+                <>
+                  <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="text-xs font-bold text-emerald-400">Aplikasi Layanan Warga</span>
+                </>
+              ) : (
+                <>
+                  <div className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse" />
+                  <span className="text-xs font-bold text-rose-400">Panel Pengurus RT / Admin</span>
+                </>
+              )
+            ) : (
+              <>
+                <div className="w-2.5 h-2.5 rounded-full bg-slate-500" />
+                <span className="text-xs font-bold text-slate-400">Portal Pemilihan Aplikasi</span>
+              </>
+            )}
           </div>
         </div>
 
@@ -611,236 +783,276 @@ export default function App() {
               {/* 🚪 LOGIN SCREEN PRE-FLOW   */}
               {/* ========================== */}
               {!isLoggedIn ? (
-                <div className="flex-grow flex flex-col items-center justify-center px-6 pt-6 pb-8 bg-white h-full overflow-y-auto">
-                  <div className="w-full max-w-sm flex flex-col items-center gap-6">
-                    {/* Brand Logo and Header */}
-                    <div className="flex flex-col items-center text-center gap-1.5 w-full">
-                      <div className="w-full flex justify-center items-center py-2">
-                        <svg viewBox="0 0 320 180" className="w-52 h-32" fill="none" xmlns="http://www.w3.org/2000/svg">
-                          {/* Sparkles / Bintang-bintang */}
-                          <path d="M125 100 L127 93 L134 91 L127 89 L125 82 L123 89 L116 91 L123 93 Z" fill="#b32e6a" opacity="0.8" />
-                          <path d="M158 73 L159 68 L164 67 L159 66 L158 61 L157 66 L152 67 L157 68 Z" fill="#b32e6a" opacity="0.8" />
-                          <path d="M160 125 L161 121 L165 120 L161 119 L160 115 L159 119 L155 120 L159 121 Z" fill="#15a34a" opacity="0.8" />
-
-                          {/* Atap Rumah Pink */}
-                          <path d="M152 72 C175 42 215 42 238 72" stroke="#b32e6a" strokeWidth="6" strokeLinecap="round" fill="none" />
-
-                          {/* Daun-daun di atas kepala */}
-                          <path d="M110 45 C115 35 125 30 135 28" stroke="#15a34a" strokeWidth="2" strokeLinecap="round" fill="none" />
-                          <path d="M122 35 C120 28 126 23 131 26 C134 30 128 37 122 35 Z" fill="#15a34a" />
-                          <path d="M132 28 C132 21 139 18 142 22 C143 27 137 32 132 28 Z" fill="#15a34a" />
-                          <path d="M112 40 C108 34 113 29 118 31 C120 35 115 41 112 40 Z" fill="#b32e6a" />
-                          <path d="M138 38 C138 33 144 30 147 33 C148 37 143 41 138 38 Z" fill="#15a34a" />
-
-                          {/* Kepala Orang Green */}
-                          <circle cx="102" cy="58" r="10" fill="#15a34a" />
-
-                          {/* Tubuh Orang & Infinity & Heart Loops */}
-                          {/* Tubuh & Tangan Orang Green (Left) */}
-                          <path d="M68 52 C85 65 95 80 95 95 C95 125 65 145 45 125 C25 105 45 75 75 105 C105 135 135 145 165 125 C195 105 220 90 235 110 C250 130 230 150 210 150 C185 150 170 130 160 120" stroke="#15a34a" strokeWidth="7" strokeLinecap="round" fill="none" />
-
-                          {/* Pink loop completing the infinity & Heart on right */}
-                          <path d="M68 105 C50 125 35 115 35 100 C35 80 60 75 85 100 C110 125 140 135 165 115 C190 95 210 80 228 100 C245 120 235 140 215 140 C195 140 180 125 170 115" stroke="#b32e6a" strokeWidth="7" strokeLinecap="round" fill="none" />
-
-                          {/* Tangan Kiri Orang Green */}
-                          <path d="M102 68 C98 78 90 88 80 94" stroke="#15a34a" strokeWidth="6" strokeLinecap="round" fill="none" />
-                        </svg>
+                appPortal === 'selection' ? (
+                  <div className="flex-grow flex flex-col justify-between px-6 pt-10 pb-8 bg-slate-50 h-full overflow-y-auto">
+                    <div className="flex flex-col items-center text-center gap-2">
+                      <div className="w-full flex justify-center items-center py-4">
+                        <WargaDigitalLogo size={140} />
                       </div>
-                      <div className="flex flex-col items-center">
-                        <h2 className="font-headline text-lg font-black tracking-[0.1em] text-[#005146] leading-none mb-1">
-                          RUKUN TETANGGA
-                        </h2>
-                        <p className="text-[9px] text-[#b32e6a] font-bold tracking-tight mb-2">
-                          Komunitas Warga Untuk Hidup Selaras & Sehati
-                        </p>
-                        <div className="h-[1px] w-24 bg-slate-200 my-1" />
-                        <span className="text-[11px] text-slate-500 font-bold uppercase tracking-wider mt-1">
-                          WARGA DIGITAL
-                        </span>
-                      </div>
+                      <h2 className="font-headline text-2xl font-black tracking-tight text-[#005146] mt-2">
+                        Warga Digital
+                      </h2>
+                      <div className="h-[2px] w-12 bg-[#005146]/20 my-2" />
+                      <p className="text-[11px] text-slate-500 font-medium px-4 leading-relaxed">
+                        Selamat datang! Silakan pilih portal aplikasi untuk melanjutkan ke modul masing-masing.
+                      </p>
                     </div>
 
-                    {/* Tab Navigation (Login vs Signup) */}
-                    <div className="w-full grid grid-cols-2 p-1 bg-slate-100 rounded-xl border border-slate-200/50">
+                    <div className="flex flex-col gap-4 my-6">
+                      {/* CARD 1: CITIZEN APP */}
                       <button
                         type="button"
-                        onClick={() => { setAuthTab('login'); setSignupSuccess(false); }}
-                        className={`py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
-                          authTab === 'login' 
-                            ? 'bg-white text-[#005146] shadow-sm' 
-                            : 'text-slate-500 hover:text-slate-800'
-                        }`}
+                        onClick={() => {
+                          setAppPortal('warga');
+                          setRole('warga');
+                          setAuthTab('login');
+                          setSignupSuccess(false);
+                          setLoginError(null);
+                          setLoginEmail('warga@gmail.com');
+                        }}
+                        className="w-full text-left bg-white border border-slate-200 hover:border-[#005146]/50 rounded-2xl p-4 transition-all duration-300 hover:shadow-lg hover:shadow-slate-100 flex items-start gap-4 active:scale-[0.98] group cursor-pointer"
                       >
-                        <LogIn className="w-3.5 h-3.5" />
-                        Masuk
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => { setAuthTab('signup'); setSignupSuccess(false); }}
-                        className={`py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
-                          authTab === 'signup' 
-                            ? 'bg-white text-[#005146] shadow-sm' 
-                            : 'text-slate-500 hover:text-slate-800'
-                        }`}
-                      >
-                        <UserPlus className="w-3.5 h-3.5" />
-                        Daftar Warga
-                      </button>
-                    </div>
-
-                    {/* Success Message Block */}
-                    {signupSuccess && (
-                      <div className="w-full bg-emerald-50 border border-emerald-200 rounded-2xl p-4 flex flex-col gap-3 animate-fadeIn">
-                        <div className="flex items-start gap-2.5">
-                          <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
-                          <div>
-                            <h4 className="text-xs font-bold text-emerald-900">Registrasi Warga Berhasil!</h4>
-                            <p className="text-[10px] text-emerald-700 leading-relaxed mt-1">
-                              Data pendaftaran Anda atas nama <strong className="font-bold">{signupName}</strong> berhasil dikirim ke basis data RT. Anda dapat langsung menggunakan email ini untuk mencoba login simulasi.
-                            </p>
-                          </div>
+                        <div className="w-11 h-11 rounded-xl bg-[#005146] text-white flex items-center justify-center shrink-0 shadow-md shadow-[#005146]/20 transition-transform group-hover:scale-105">
+                          <User className="w-5 h-5" />
                         </div>
+                        <div className="flex-grow">
+                          <h3 className="font-headline text-xs font-bold text-slate-800 flex items-center gap-1.5 leading-none">
+                            Aplikasi Warga
+                            <span className="text-[9px] font-bold bg-[#005146]/10 text-[#005146] px-1.5 py-0.5 rounded-full leading-none">Warga</span>
+                          </h3>
+                          <p className="text-[10px] text-slate-500 leading-relaxed mt-1.5">
+                            Bayar iuran bulanan, laporkan pengaduan, dan pantau iuran & berita RT terupdate secara mandiri.
+                          </p>
+                          <span className="text-[10px] font-bold text-[#005146] inline-flex items-center gap-1 mt-2.5 group-hover:underline">
+                            Masuk Portal Warga &rarr;
+                          </span>
+                        </div>
+                      </button>
+
+                      {/* CARD 2: ADMIN APP */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAppPortal('admin');
+                          setRole('admin');
+                          setAuthTab('login');
+                          setSignupSuccess(false);
+                          setLoginError(null);
+                          setLoginEmail('admin@gmail.com');
+                        }}
+                        className="w-full text-left bg-white border border-slate-200 hover:border-[#b32e6a]/50 rounded-2xl p-4 transition-all duration-300 hover:shadow-lg hover:shadow-slate-100 flex items-start gap-4 active:scale-[0.98] group cursor-pointer"
+                      >
+                        <div className="w-11 h-11 rounded-xl bg-[#b32e6a] text-white flex items-center justify-center shrink-0 shadow-md shadow-[#b32e6a]/20 transition-transform group-hover:scale-105">
+                          <Shield className="w-5 h-5" />
+                        </div>
+                        <div className="flex-grow">
+                          <h3 className="font-headline text-xs font-bold text-slate-800 flex items-center gap-1.5 leading-none">
+                            Panel Pengurus RT
+                            <span className="text-[9px] font-bold bg-[#b32e6a]/10 text-[#b32e6a] px-1.5 py-0.5 rounded-full leading-none">Pengurus</span>
+                          </h3>
+                          <p className="text-[10px] text-slate-500 leading-relaxed mt-1.5">
+                            Validasi pendaftaran warga baru, konfirmasi transaksi pembayaran, dan kelola bulletin informasi warga.
+                          </p>
+                          <span className="text-[10px] font-bold text-[#b32e6a] inline-flex items-center gap-1 mt-2.5 group-hover:underline">
+                            Masuk Panel Pengurus &rarr;
+                          </span>
+                        </div>
+                      </button>
+                    </div>
+
+                    <div className="text-center text-[9px] text-slate-400 font-bold uppercase tracking-wider">
+                      Warga Digital &bull; Rukun Tetangga Sejahtera
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex-grow flex flex-col items-center justify-center px-6 pt-12 pb-8 bg-white h-full overflow-y-auto relative animate-fadeIn">
+                    {/* Back to Portal Selector */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAppPortal('selection');
+                        setLoginError(null);
+                      }}
+                      className="absolute top-4 left-4 py-1.5 px-3 rounded-full text-[10px] font-bold border border-slate-200 text-slate-500 bg-white hover:bg-slate-50 hover:text-slate-800 transition-all flex items-center gap-1 cursor-pointer z-40"
+                      title="Kembali ke Pemilihan Aplikasi"
+                    >
+                      <ArrowLeft className="w-3 h-3" /> Kembali
+                    </button>
+
+                    <div className="w-full max-w-sm flex flex-col items-center gap-5 mt-4">
+                      {/* Brand Logo and Header */}
+                      <div className="flex flex-col items-center text-center gap-1.5 w-full">
+                        <div className="w-full flex justify-center items-center py-1">
+                          <WargaDigitalLogo size={120} />
+                        </div>
+                        <div className="flex flex-col items-center">
+                          <h2 className={`font-headline text-base font-black tracking-[0.08em] leading-none mb-1 ${appPortal === 'admin' ? 'text-[#b32e6a]' : 'text-[#005146]'}`}>
+                            {appPortal === 'admin' ? 'PANEL PENGURUS RT' : 'APLIKASI WARGA'}
+                          </h2>
+                          <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider mb-2">
+                            {appPortal === 'admin' ? 'Sistem Manajemen & Tata Kelola' : 'Layanan Mandiri Warga Digital'}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Tab Navigation (Login vs Signup) */}
+                      <div className="w-full grid grid-cols-2 p-1 bg-slate-100 rounded-xl border border-slate-200/50">
                         <button
                           type="button"
-                          onClick={() => { setAuthTab('login'); setSignupSuccess(false); }}
-                          className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-[11px] font-bold transition-all"
+                          onClick={() => { setAuthTab('login'); setSignupSuccess(false); setLoginError(null); }}
+                          className={`py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                            authTab === 'login' 
+                              ? (appPortal === 'admin' ? 'bg-[#b32e6a] text-white shadow-sm' : 'bg-[#005146] text-white shadow-sm') 
+                              : 'text-slate-500 hover:text-slate-800'
+                          }`}
                         >
-                          Lanjut Masuk Sekarang
+                          <LogIn className="w-3.5 h-3.5" />
+                          Masuk
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { 
+                            setAuthTab('signup'); 
+                            setSignupSuccess(false); 
+                            setLoginError(null);
+                            setSignupRole(appPortal === 'admin' ? 'admin' : 'warga'); 
+                          }}
+                          className={`py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                            authTab === 'signup' 
+                              ? (appPortal === 'admin' ? 'bg-[#b32e6a] text-white shadow-sm' : 'bg-[#005146] text-white shadow-sm') 
+                              : 'text-slate-500 hover:text-slate-800'
+                          }`}
+                        >
+                          <UserPlus className="w-3.5 h-3.5" />
+                          {appPortal === 'admin' ? 'Ajukan Pengurus' : 'Daftar Warga'}
                         </button>
                       </div>
-                    )}
 
-                    {!signupSuccess && (
-                      <form onSubmit={(e) => { e.preventDefault(); }} className="w-full flex flex-col gap-4">
-                        {authTab === 'login' ? (
-                          <>
-                            {/* LOGIN FIELDS */}
+                      {/* Success Message Block */}
+                      {signupSuccess && (
+                        <div className="w-full bg-emerald-50 border border-emerald-200 rounded-2xl p-4 flex flex-col gap-3 animate-fadeIn">
+                          <div className="flex items-start gap-2.5">
+                            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
                             <div>
-                              <label className="block text-xs font-semibold text-slate-500 mb-1.5">Email / Nama Warga</label>
-                              <div className="relative">
-                                <input 
-                                  type="text" 
-                                  placeholder="Masukkan email (cth: warga@gmail.com atau admin@gmail.com)" 
-                                  value={loginEmail} 
-                                  onChange={(e) => setLoginEmail(e.target.value)}
-                                  className="w-full bg-[#f1f5f9] border border-slate-200/50 rounded-xl py-3 px-4 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#006b5d] focus:bg-white text-slate-800 transition-all"
-                                  required
-                                />
-                              </div>
+                              <h4 className="text-xs font-bold text-emerald-900">Pendaftaran Dikirim!</h4>
+                              <p className="text-[10px] text-emerald-700 leading-relaxed mt-1">
+                                Pengajuan akun <strong className="font-bold">{signupName}</strong> ({signupRole === 'admin' ? 'Pengurus' : 'Warga'}) berhasil dikirim ke database RT. Akun akan aktif segera setelah divalidasi.
+                              </p>
                             </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => { setAuthTab('login'); setSignupSuccess(false); }}
+                            className={`w-full py-2 text-white rounded-xl text-[11px] font-bold transition-all ${
+                              appPortal === 'admin' ? 'bg-[#b32e6a] hover:bg-[#941b52]' : 'bg-[#005146] hover:bg-[#003b33]'
+                            }`}
+                          >
+                            Lanjut Masuk Sekarang
+                          </button>
+                        </div>
+                      )}
 
-                            <div>
-                              <div className="flex justify-between items-center mb-1.5">
-                                <label className="block text-xs font-semibold text-slate-500">Kata Sandi</label>
-                                <span className="text-[11px] text-[#0040e0] font-semibold cursor-pointer hover:underline">Lupa?</span>
-                              </div>
-                              <div className="relative">
-                                <input 
-                                  type="password" 
-                                  placeholder="Masukkan kata sandi (cth: password)" 
-                                  value={loginPassword} 
-                                  onChange={(e) => setLoginPassword(e.target.value)}
-                                  className="w-full bg-[#f1f5f9] border border-slate-200/50 rounded-xl py-3 px-4 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#006b5d] focus:bg-white text-slate-800 transition-all"
-                                  required
-                                />
-                              </div>
+                      {!signupSuccess && (
+                        <form onSubmit={(e) => { e.preventDefault(); }} className="w-full flex flex-col gap-4">
+                          {loginError && (
+                            <div className="w-full bg-rose-50 border border-rose-200 text-rose-700 text-[11px] rounded-xl p-3 font-semibold leading-relaxed animate-fadeIn">
+                              {loginError}
                             </div>
+                          )}
 
-                            {/* Submit Button */}
-                            <button 
-                              type="button"
-                              onClick={async () => {
-                                // Determine role based on demo keyword, general role, or signup selection
-                                const isDemoAdmin = loginEmail.toLowerCase().includes('admin') || 
-                                                    (signupEmail && loginEmail.toLowerCase() === signupEmail.toLowerCase() && signupRole === 'admin');
-                                if (isDemoAdmin) {
-                                  setRole('admin');
-                                  setIsLoggedIn(true);
-                                  addLog(`Sesi Pengurus RT (${loginEmail}) dimulai.`);
-                                } else {
-                                  setRole('warga');
-                                  // Set user dynamic session if matching signup data, otherwise default
-                                  if (signupName && loginEmail.toLowerCase() === signupEmail.toLowerCase()) {
-                                    setLoggedInResidentName(signupName);
-                                    setLoggedInResidentBlock(`${signupBlock}/${signupNo}`);
-                                  } else {
-                                    setLoggedInResidentName('Siti Nurhaliza');
-                                    setLoggedInResidentBlock('Blok A/12');
-                                  }
-                                  setIsLoggedIn(true);
-                                  addLog(`Sesi warga ${loginEmail} dimulai.`);
-                                }
-                              }}
-                              className="w-full bg-[#005146] hover:bg-[#003b33] active:scale-[0.98] text-white font-bold text-xs py-3.5 rounded-xl transition-all shadow-md shadow-[#005146]/10 flex items-center justify-center gap-2 mt-2"
-                            >
-                              <LogIn className="w-4 h-4" />
-                              Masuk Sekarang
-                            </button>
-
-                            {/* Demo Shortcut Helper */}
-                            <div className="w-full bg-slate-50 border border-slate-200/60 rounded-xl p-3 mt-1 text-center">
-                              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-2">Simulasi Pengguna Cepat:</span>
-                              <div className="flex justify-center gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setLoginEmail('warga@gmail.com');
-                                    setRole('warga');
-                                    setLoggedInResidentName('Siti Nurhaliza');
-                                    setLoggedInResidentBlock('Blok A/12');
-                                    setIsLoggedIn(true);
-                                    addLog("Sesi Warga Demo dimulai.");
-                                  }}
-                                  className="py-1.5 px-3 bg-white hover:bg-[#005146]/5 text-[#005146] border border-slate-200 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1"
-                                >
-                                  <User className="w-3 h-3" /> Warga Demo
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setLoginEmail('admin@gmail.com');
-                                    setRole('admin');
-                                    setIsLoggedIn(true);
-                                    addLog("Sesi Admin Demo dimulai.");
-                                  }}
-                                  className="py-1.5 px-3 bg-white hover:bg-[#005146]/5 text-[#005146] border border-slate-200 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1"
-                                >
-                                  <Shield className="w-3 h-3" /> Admin RT Demo
-                                </button>
-                              </div>
-                            </div>
-                          </>
-                        ) : (
-                          <>
-                            {/* SIGNUP FIELDS */}
-                            <div className="flex flex-col gap-3">
+                          {authTab === 'login' ? (
+                            <>
+                              {/* LOGIN FIELDS */}
                               <div>
-                                <label className="block text-xs font-semibold text-slate-500 mb-1.5">Pilih Peran (Role)</label>
-                                <div className="grid grid-cols-2 gap-2 bg-[#f1f5f9] p-1 rounded-xl">
-                                  <button
-                                    type="button"
-                                    onClick={() => setSignupRole('warga')}
-                                    className={`py-2 px-3 text-xs font-bold rounded-lg transition-all ${
-                                      signupRole === 'warga'
-                                        ? 'bg-[#005146] text-white shadow-sm'
-                                        : 'text-slate-600 hover:text-slate-800'
-                                    }`}
-                                  >
-                                    Warga (Citizen)
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => setSignupRole('admin')}
-                                    className={`py-2 px-3 text-xs font-bold rounded-lg transition-all ${
-                                      signupRole === 'admin'
-                                        ? 'bg-[#b32e6a] text-white shadow-sm'
-                                        : 'text-slate-600 hover:text-slate-800'
-                                    }`}
-                                  >
-                                    Pengurus (RT Admin)
-                                  </button>
+                                <label className="block text-xs font-semibold text-slate-500 mb-1.5">
+                                  {appPortal === 'admin' ? 'Email Pengurus RT' : 'Email / Nama Warga'}
+                                </label>
+                                <div className="relative">
+                                  <input 
+                                    type="text" 
+                                    placeholder={appPortal === 'admin' ? "cth: admin@gmail.com" : "cth: warga@gmail.com"} 
+                                    value={loginEmail} 
+                                    onChange={(e) => setLoginEmail(e.target.value)}
+                                    className="w-full bg-[#f1f5f9] border border-slate-200/50 rounded-xl py-3 px-4 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#006b5d] focus:bg-white text-slate-800 transition-all"
+                                    required
+                                  />
                                 </div>
                               </div>
+
+                              <div>
+                                <div className="flex justify-between items-center mb-1.5">
+                                  <label className="block text-xs font-semibold text-slate-500">Kata Sandi</label>
+                                  <span className="text-[11px] text-[#0040e0] font-semibold cursor-pointer hover:underline">Lupa?</span>
+                                </div>
+                                <div className="relative">
+                                  <input 
+                                    type="password" 
+                                    placeholder="Masukkan kata sandi (cth: password)" 
+                                    value={loginPassword} 
+                                    onChange={(e) => setLoginPassword(e.target.value)}
+                                    className="w-full bg-[#f1f5f9] border border-slate-200/50 rounded-xl py-3 px-4 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#006b5d] focus:bg-white text-slate-800 transition-all"
+                                    required
+                                  />
+                                </div>
+                              </div>
+
+                              {/* Submit Button */}
+                              <button 
+                                type="button"
+                                onClick={async () => {
+                                  setLoginError(null);
+                                  const emailLower = loginEmail.toLowerCase().trim();
+                                  
+                                  if (appPortal === 'admin') {
+                                    // Verify if this is an admin login
+                                    const isAdminEmail = emailLower.includes('admin') || 
+                                                         (signupEmail && emailLower === signupEmail.toLowerCase() && signupRole === 'admin');
+                                    if (!isAdminEmail) {
+                                      setLoginError("Akses ditolak. Email Anda tidak terdaftar sebagai Pengurus RT.");
+                                      addLog(`[Gagal] Percobaan masuk admin diblokir (bukan email admin): ${loginEmail}`);
+                                      return;
+                                    }
+                                    
+                                    setRole('admin');
+                                    setIsLoggedIn(true);
+                                    addLog(`Sesi Pengurus RT (${loginEmail}) dimulai.`);
+                                  } else {
+                                    // Verify if this is a warga login (must not be an admin email)
+                                    const isAdminEmail = emailLower.includes('admin') || 
+                                                         (signupEmail && emailLower === signupEmail.toLowerCase() && signupRole === 'admin');
+                                    if (isAdminEmail) {
+                                      setLoginError("Email ini terdaftar sebagai Pengurus RT. Silakan gunakan Aplikasi Pengurus RT.");
+                                      addLog(`[Gagal] Percobaan masuk warga diblokir (email terdaftar sebagai admin): ${loginEmail}`);
+                                      return;
+                                    }
+
+                                    setRole('warga');
+                                    // Set user dynamic session if matching signup data, otherwise default
+                                    if (signupName && emailLower === signupEmail.toLowerCase()) {
+                                      setLoggedInResidentName(signupName);
+                                      setLoggedInResidentBlock(`${signupBlock}/${signupNo}`);
+                                    } else {
+                                      setLoggedInResidentName('Siti Nurhaliza');
+                                      setLoggedInResidentBlock('Blok A/12');
+                                    }
+                                    setIsLoggedIn(true);
+                                    addLog(`Sesi warga ${loginEmail} dimulai.`);
+                                  }
+                                }}
+                                className={`w-full text-white font-bold text-xs py-3.5 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 mt-2 cursor-pointer active:scale-[0.98] ${
+                                  appPortal === 'admin' 
+                                    ? 'bg-[#b32e6a] hover:bg-[#941b52] shadow-[#b32e6a]/15' 
+                                    : 'bg-[#005146] hover:bg-[#003b33] shadow-[#005146]/15'
+                                }`}
+                              >
+                                <LogIn className="w-4 h-4" />
+                                Masuk ke {appPortal === 'admin' ? 'Panel Pengurus' : 'Aplikasi Warga'}
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              {/* SIGNUP FIELDS */}
+                              <div className="flex flex-col gap-3">
 
                               <div>
                                 <label className="block text-xs font-semibold text-slate-500 mb-1">Nama Lengkap Sesuai KTP</label>
@@ -948,7 +1160,7 @@ export default function App() {
                     </div>
                   </div>
                 </div>
-              ) : (
+              )) : (
                 <>
                   {/* ========================== */}
                   {/* 🛡️ APP MAIN LOGGED IN VIEWS */}
@@ -958,7 +1170,7 @@ export default function App() {
                   {role === 'warga' && (
                     <div className="flex flex-col flex-grow">
                       
-                      {/* CivicConnect Header */}
+                      {/* Warga Digital Header */}
                       <div className="flex items-center justify-between px-6 py-4 bg-[#f8f9ff] sticky top-0 z-20 shrink-0">
                         <div className="flex items-center gap-2.5">
                           <button 
@@ -978,6 +1190,7 @@ export default function App() {
                           <button 
                             onClick={() => {
                               setIsLoggedIn(false);
+                              setAppPortal('selection');
                               addLog(`Sesi warga ${loggedInResidentName} telah berakhir. Pengguna keluar.`);
                             }}
                             className="w-7 h-7 rounded-full bg-rose-50 hover:bg-rose-100 flex items-center justify-center text-rose-600 transition-colors ml-1"
@@ -991,56 +1204,127 @@ export default function App() {
                       {/* CITIZEN TAB 1: HOME */}
                       {wargaTab === 'home' && (
                         <div className="px-5 flex flex-col gap-6 pt-2 animate-fadeIn">
-                          
-                          {/* Announcement card - Dynamic News from DB */}
-                          {(() => {
-                            const latestPenting = infos.find(i => i.category === 'penting' && !i.isDraft) || infos[0];
-                            if (!latestPenting) return null;
-                            return (
-                              <div className="bg-white rounded-[24px] p-5 shadow-[0_4px_20px_rgba(0,107,93,0.06)] flex flex-col gap-4">
-                                <div className="flex justify-between items-center">
-                                  <span className="bg-rose-50 text-[#ba1a1a] text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider flex items-center gap-1">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-[#ba1a1a] animate-ping" />
-                                    {latestPenting.category}
-                                  </span>
-                                  <span className="text-[11px] text-slate-400 font-medium font-mono">
-                                    {new Date(latestPenting.createdAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
-                                  </span>
+                                       {/* Announcement Module - Dynamic News from DB */}
+                          <div className="bg-white rounded-[24px] p-5 shadow-[0_4px_20px_rgba(0,107,93,0.06)] flex flex-col gap-4">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <div className="w-8 h-8 rounded-full bg-[#005146]/10 flex items-center justify-center text-[#005146]">
+                                  <Megaphone className="w-4 h-4" />
                                 </div>
-
-                                <div>
-                                  <h3 className="font-headline text-base font-bold text-[#0b1c30] leading-tight mb-2">
-                                    {latestPenting.title}
-                                  </h3>
-                                  <p className="text-xs text-slate-500 leading-relaxed line-clamp-3">
-                                    {latestPenting.content}
-                                  </p>
-                                </div>
-
-                                {latestPenting.imageUrl && (
-                                  <div className="w-full h-36 rounded-2xl overflow-hidden bg-slate-100 relative border border-slate-100">
-                                    <img 
-                                      src={latestPenting.imageUrl} 
-                                      alt={latestPenting.title} 
-                                      className="w-full h-full object-cover"
-                                      referrerPolicy="no-referrer"
-                                      onError={(e) => {
-                                        e.currentTarget.src = "https://images.unsplash.com/photo-1513829096960-ef229e5230ab?q=80&w=800";
-                                      }}
-                                    />
-                                  </div>
-                                )}
-
-                                <button 
-                                  onClick={() => setSelectedInfo(latestPenting)}
-                                  className="text-xs font-bold text-[#005146] hover:text-[#003b33] flex items-center gap-1 group self-start transition-all"
-                                >
-                                  Baca Selengkapnya 
-                                  <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
-                                </button>
+                                <h3 className="font-headline text-sm font-bold text-[#0b1c30]">Pengumuman & Berita RT</h3>
                               </div>
-                            );
-                          })()}
+                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-100 px-2 py-0.5 rounded-full">
+                                {infos.filter(i => !i.isDraft).length} Info
+                              </span>
+                            </div>
+
+                            {/* Category Filter Tabs */}
+                            <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-2 px-2 scrollbar-none">
+                              {(['semua', 'penting', 'umum', 'kegiatan'] as const).map((cat) => {
+                                const count = cat === 'semua' 
+                                  ? infos.filter(i => !i.isDraft).length
+                                  : infos.filter(i => i.category === cat && !i.isDraft).length;
+                                return (
+                                  <button
+                                    key={cat}
+                                    type="button"
+                                    onClick={() => setCitizenInfoFilter(cat)}
+                                    className={`px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all whitespace-nowrap border ${
+                                      citizenInfoFilter === cat
+                                        ? 'bg-[#005146] text-white border-transparent shadow-sm shadow-[#005146]/15'
+                                        : 'bg-slate-50 text-slate-400 border-slate-200/60 hover:bg-slate-100'
+                                    }`}
+                                  >
+                                    {cat} {count > 0 && `(${count})`}
+                                  </button>
+                                );
+                              })}
+                            </div>
+
+                            {/* Announcements List */}
+                            <div className="flex flex-col gap-3.5 max-h-[380px] overflow-y-auto pr-1 scrollbar-thin">
+                              {(() => {
+                                const activeInfos = infos.filter(i => !i.isDraft);
+                                const filteredInfos = citizenInfoFilter === 'semua' 
+                                  ? activeInfos 
+                                  : activeInfos.filter(i => i.category === citizenInfoFilter);
+
+                                if (filteredInfos.length === 0) {
+                                  return (
+                                    <div className="py-8 text-center flex flex-col items-center justify-center gap-2">
+                                      <div className="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center text-slate-300">
+                                        <FileText className="w-6 h-6" />
+                                      </div>
+                                      <p className="text-xs font-semibold text-slate-400">Belum ada pengumuman untuk kategori ini.</p>
+                                    </div>
+                                  );
+                                }
+
+                                return filteredInfos.map((item) => {
+                                  const isPenting = item.category === 'penting';
+                                  return (
+                                    <div 
+                                      key={item.id} 
+                                      className={`p-4 rounded-2xl border transition-all hover:border-[#006b5d]/30 flex flex-col gap-3 ${
+                                        isPenting 
+                                          ? 'bg-rose-50/30 border-rose-100 animate-pulse-subtle' 
+                                          : 'bg-slate-50/40 border-slate-100'
+                                      }`}
+                                    >
+                                      <div className="flex justify-between items-start gap-2">
+                                        <div className="flex flex-col gap-1 min-w-0">
+                                          <div className="flex items-center gap-1.5 flex-wrap">
+                                            <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${
+                                              item.category === 'penting' ? 'bg-rose-100 text-[#ba1a1a]' :
+                                              item.category === 'umum' ? 'bg-blue-100 text-[#0040e0]' :
+                                              'bg-emerald-100 text-emerald-700'
+                                            }`}>
+                                              {item.category}
+                                            </span>
+                                            <span className="text-[10px] text-slate-400 font-mono font-medium">
+                                              {new Date(item.createdAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                            </span>
+                                          </div>
+                                          <h4 className="font-headline text-xs font-bold text-[#0b1c30] leading-snug line-clamp-2 mt-1">
+                                            {item.title}
+                                          </h4>
+                                        </div>
+
+                                        {item.imageUrl && (
+                                          <div className="w-14 h-14 rounded-xl overflow-hidden bg-slate-100 border border-slate-200/50 shrink-0 shadow-sm">
+                                            <img 
+                                              src={item.imageUrl} 
+                                              alt={item.title} 
+                                              className="w-full h-full object-cover"
+                                              referrerPolicy="no-referrer"
+                                              onError={(e) => {
+                                                e.currentTarget.src = "https://images.unsplash.com/photo-1513829096960-ef229e5230ab?q=80&w=800";
+                                              }}
+                                            />
+                                          </div>
+                                        )}
+                                      </div>
+
+                                      <p className="text-[11px] text-slate-500 leading-relaxed line-clamp-2">
+                                        {item.content}
+                                      </p>
+
+                                      <div className="flex justify-between items-center pt-1 border-t border-slate-200/40">
+                                        <button 
+                                          type="button"
+                                          onClick={() => setSelectedInfo(item)}
+                                          className="text-[11px] font-bold text-[#005146] hover:text-[#003b33] flex items-center gap-0.5 group transition-all"
+                                        >
+                                          Baca Selengkapnya 
+                                          <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+                                        </button>
+                                      </div>
+                                    </div>
+                                  );
+                                });
+                              })()}
+                            </div>
+                          </div>
 
                           {/* Quick Actions (Lapor Kejadian, Minta Surat, Bayar Iuran) */}
                           <div className="grid grid-cols-3 gap-3">
@@ -1075,7 +1359,7 @@ export default function App() {
                             </button>
                           </div>
 
-                          {/* Status Iuran Chart card (Mockup 2) */}
+                          {/* Status Iuran Chart card */}
                           <div className="bg-white rounded-[24px] p-5 shadow-[0_4px_20px_rgba(0,107,93,0.04)] flex flex-col gap-5">
                             <div className="flex items-center gap-2 text-[#0b1c30]">
                               <Wallet className="w-5 h-5 text-[#006b5d]" />
@@ -1097,13 +1381,13 @@ export default function App() {
                                     className="text-[#005146] stroke-current" 
                                     strokeWidth="10" 
                                     strokeDasharray={2 * Math.PI * 50}
-                                    strokeDashoffset={(2 * Math.PI * 50) * (1 - 0.75)}
+                                    strokeDashoffset={(2 * Math.PI * 50) * (1 - progressPercentage / 100)}
                                     fill="transparent" 
                                     strokeLinecap="round"
                                   />
                                 </svg>
                                 <div className="absolute flex flex-col items-center">
-                                  <span className="font-headline text-2xl font-bold text-[#0b1c30]">75%</span>
+                                  <span className="font-headline text-2xl font-bold text-[#0b1c30]">{progressPercentage}%</span>
                                 </div>
                               </div>
                             </div>
@@ -1114,27 +1398,35 @@ export default function App() {
                                 <span className="flex items-center gap-2 font-medium text-slate-500">
                                   <span className="w-2.5 h-2.5 rounded-full bg-[#005146]" /> Sudah Bayar
                                 </span>
-                                <span className="font-bold text-[#0b1c30]">Rp 150.000</span>
+                                <span className="font-bold text-[#0b1c30]">Rp {sudahBayarHome.toLocaleString('id-ID')}</span>
                               </div>
                               <div className="flex justify-between items-center py-1.5">
                                 <span className="flex items-center gap-2 font-medium text-slate-500">
-                                  <span className="w-2.5 h-2.5 rounded-full bg-blue-100" /> Belum Bayar
+                                  <span className={`w-2.5 h-2.5 rounded-full ${belumBayarHome > 0 ? 'bg-blue-100' : 'bg-slate-200'}`} /> Belum Bayar
                                 </span>
-                                <span className="font-bold text-[#ba1a1a]">Rp 50.000</span>
+                                <span className={`font-bold ${belumBayarHome > 0 ? 'text-[#ba1a1a]' : 'text-slate-400'}`}>
+                                  Rp {belumBayarHome.toLocaleString('id-ID')}
+                                </span>
                               </div>
                             </div>
 
-                            <button 
-                              onClick={() => {
-                                setPaymentAmount(50000);
-                                setPaymentCategory('Kekurangan Iuran Keamanan Mar 2024');
-                                setPaymentStep('select');
-                                setShowPaymentModal(true);
-                              }}
-                              className="w-full bg-[#005146] hover:bg-[#003b33] text-white py-3.5 rounded-xl font-bold text-xs tracking-wider transition-all active:scale-95 flex items-center justify-center gap-2 shadow-md shadow-[#005146]/15"
-                            >
-                              Bayar Sekarang <ArrowLeft className="w-4 h-4 rotate-180" />
-                            </button>
+                            {belumBayarHome > 0 ? (
+                              <button 
+                                onClick={() => {
+                                  setPaymentAmount(50000);
+                                  setPaymentCategory('Kekurangan Iuran Keamanan Mar 2024');
+                                  setPaymentStep('select');
+                                  setShowPaymentModal(true);
+                                }}
+                                className="w-full bg-[#005146] hover:bg-[#003b33] text-white py-3.5 rounded-xl font-bold text-xs tracking-wider transition-all active:scale-95 flex items-center justify-center gap-2 shadow-md shadow-[#005146]/15"
+                              >
+                                Bayar Sekarang <ArrowLeft className="w-4 h-4 rotate-180" />
+                              </button>
+                            ) : (
+                              <div className="w-full bg-emerald-50 text-[#005146] border border-emerald-100 py-3.5 rounded-xl font-bold text-xs text-center flex items-center justify-center gap-2 animate-fadeIn">
+                                <CheckCircle2 className="w-4 h-4 text-[#005146]" /> Iuran Bulan Ini Lunas
+                              </div>
+                            )}
                           </div>
 
                         </div>
@@ -1365,11 +1657,68 @@ export default function App() {
                             {/* File Uploader */}
                             <div className="flex flex-col gap-1.5">
                               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Lampiran (Opsional)</label>
-                              <div className="border border-dashed border-slate-300 rounded-xl p-5 bg-slate-50/50 flex flex-col items-center justify-center text-center hover:bg-slate-50 transition-colors cursor-pointer relative group">
-                                <UploadCloud className="w-8 h-8 text-[#006b5d]/80 group-hover:scale-105 transition-transform mb-2" />
-                                <span className="text-xs font-bold text-[#0b1c30]">Upload Foto, Bukti Bayar, atau KTP</span>
-                                <span className="text-[10px] text-slate-400 mt-1 font-medium">Maks. 5MB (JPG, PNG, PDF)</span>
-                              </div>
+                              
+                              {!reportFile ? (
+                                <div 
+                                  onDragOver={(e) => {
+                                    e.preventDefault();
+                                    setIsDragging(true);
+                                  }}
+                                  onDragLeave={() => setIsDragging(false)}
+                                  onDrop={(e) => {
+                                    e.preventDefault();
+                                    setIsDragging(false);
+                                    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                                      handleFileChange(e.dataTransfer.files[0]);
+                                    }
+                                  }}
+                                  onClick={() => document.getElementById('report-file-input')?.click()}
+                                  className={`border-2 border-dashed rounded-xl p-5 flex flex-col items-center justify-center text-center transition-all duration-300 cursor-pointer relative group ${
+                                    isDragging 
+                                      ? 'border-[#005146] bg-[#005146]/5' 
+                                      : 'border-slate-300 hover:border-[#006b5d]/50 bg-slate-50/50 hover:bg-slate-50'
+                                  }`}
+                                >
+                                  <input 
+                                    id="report-file-input"
+                                    type="file" 
+                                    accept="image/*"
+                                    onClick={(e) => e.stopPropagation()}
+                                    onChange={(e) => {
+                                      if (e.target.files && e.target.files[0]) {
+                                        handleFileChange(e.target.files[0]);
+                                      }
+                                    }}
+                                    className="hidden" 
+                                  />
+                                  <UploadCloud className="w-8 h-8 text-[#006b5d]/80 group-hover:scale-105 transition-transform mb-2" />
+                                  <span className="text-xs font-bold text-[#0b1c30]">Seret & jatuhkan berkas di sini atau klik</span>
+                                  <span className="text-[10px] text-slate-400 mt-1 font-medium">Maks. 5MB (JPG, PNG)</span>
+                                </div>
+                              ) : (
+                                <div className="relative border border-slate-200 rounded-xl p-3 bg-slate-50/80 flex items-center justify-between gap-3 animate-fadeIn">
+                                  <div className="flex items-center gap-3 min-w-0">
+                                    <img 
+                                      src={reportFile} 
+                                      alt="Lampiran" 
+                                      className="w-12 h-12 rounded-lg object-cover bg-white border border-slate-100 shrink-0 cursor-pointer hover:opacity-90"
+                                      onClick={() => setSelectedProofUrl(reportFile)}
+                                    />
+                                    <div className="min-w-0">
+                                      <p className="text-[11px] font-bold text-slate-800 truncate">Gambar Berhasil Dimuat</p>
+                                      <p className="text-[9px] text-slate-400 font-bold uppercase mt-0.5">Klik gambar untuk melihat penuh</p>
+                                    </div>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => setReportFile('')}
+                                    className="w-7 h-7 rounded-full bg-rose-50 hover:bg-rose-100 text-rose-600 flex items-center justify-center transition-colors shrink-0"
+                                    title="Hapus Gambar"
+                                  >
+                                    <X className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              )}
                             </div>
 
                             <button
@@ -1399,6 +1748,15 @@ export default function App() {
                                   <div className="flex-grow min-w-0">
                                     <h4 className="text-xs font-bold text-[#0b1c30] truncate">{rep.title}</h4>
                                     <p className="text-[10px] text-slate-400 font-medium truncate">{rep.detail}</p>
+                                    {rep.photoUrl && (
+                                      <button 
+                                        type="button"
+                                        onClick={() => setSelectedProofUrl(rep.photoUrl)}
+                                        className="text-[9px] text-[#006b5d] font-bold mt-1 hover:underline flex items-center gap-1 cursor-pointer"
+                                      >
+                                        <Layers className="w-3 h-3" /> Lihat Lampiran
+                                      </button>
+                                    )}
                                   </div>
                                   <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full uppercase shrink-0 ${
                                     rep.status === 'done' ? 'bg-emerald-50 text-emerald-600' :
@@ -1429,7 +1787,7 @@ export default function App() {
                             <div className="flex justify-between items-start">
                               <div>
                                 <span className="text-[10px] text-emerald-200 uppercase tracking-wider font-bold">Total Iuran Tahun Ini</span>
-                                <h3 className="font-headline text-3xl font-black mt-1">Rp 1.800.000</h3>
+                                <h3 className="font-headline text-3xl font-black mt-1">Rp {totalIuranTahunIni.toLocaleString('id-ID')}</h3>
                               </div>
                               <div className="bg-white/10 p-2.5 rounded-xl backdrop-blur-sm text-white">
                                 <Wallet className="w-5 h-5" />
@@ -1442,13 +1800,22 @@ export default function App() {
                               <div>
                                 <span className="text-[10px] text-emerald-200 font-bold block">Status Iuran Terkini</span>
                                 <div className="flex items-center gap-1.5 mt-1">
-                                  <span className="w-2 h-2 rounded-full bg-emerald-300 animate-pulse" />
-                                  <span className="text-xs font-bold text-white">Lunas (Jan - Mar 2024)</span>
+                                  <span className={`w-2 h-2 rounded-full animate-pulse ${
+                                    belumBayarHome === 0 ? 'bg-emerald-300' :
+                                    hasPendingKekurangan ? 'bg-amber-300' : 'bg-rose-300'
+                                  }`} />
+                                  <span className="text-xs font-bold text-white">
+                                    {belumBayarHome === 0 
+                                      ? 'Lunas Sepenuhnya (Jan - Mar 2024)' 
+                                      : hasPendingKekurangan 
+                                        ? 'Menunggu Verifikasi Pembayaran' 
+                                        : 'Belum Lunas (Kekurangan Mar 2024)'}
+                                  </span>
                                 </div>
                               </div>
                               
                               <button 
-                                onClick={() => alert('Mengunduh rekap keuangan warga PDF...')}
+                                onClick={handleDownloadRekap}
                                 className="bg-white text-[#005146] hover:bg-emerald-50 active:scale-95 text-[11px] font-bold py-2.5 px-3 rounded-xl transition-all flex items-center gap-1.5 shadow-sm"
                               >
                                 <FileSpreadsheet className="w-3.5 h-3.5" /> Unduh Rekap
@@ -1503,10 +1870,13 @@ export default function App() {
                                   <span className="text-xs font-bold text-[#0b1c30] font-mono">
                                     + Rp {tx.amount.toLocaleString('id-ID')}
                                   </span>
-                                  <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                                    tx.category.includes('Sumbangan') ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'
+                                  <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${
+                                    tx.status === 'pending' ? 'bg-amber-50 text-amber-700 border-amber-100' :
+                                    tx.status === 'rejected' ? 'bg-rose-50 text-[#ba1a1a] border-rose-100' :
+                                    'bg-emerald-50 text-emerald-700 border-emerald-100'
                                   }`}>
-                                    {tx.category.includes('Sumbangan') ? 'Menunggu' : 'Berhasil'}
+                                    {tx.status === 'pending' ? 'Menunggu' :
+                                     tx.status === 'rejected' ? 'Ditolak' : 'Berhasil'}
                                   </span>
                                 </div>
                               </div>
@@ -1554,6 +1924,7 @@ export default function App() {
                           <button 
                             onClick={() => {
                               setIsLoggedIn(false);
+                              setAppPortal('selection');
                               addLog("Sesi admin telah berakhir. Pengguna keluar.");
                             }}
                             className="w-8 h-8 rounded-full bg-rose-50 hover:bg-rose-100 flex items-center justify-center text-rose-600 transition-colors"
@@ -1712,6 +2083,17 @@ export default function App() {
                                     <p className="text-xs text-slate-500 leading-relaxed mb-3 line-clamp-2">
                                       {rep.detail}
                                     </p>
+                                    {rep.photoUrl && (
+                                      <div className="mb-3">
+                                        <button 
+                                          type="button"
+                                          onClick={() => setSelectedProofUrl(rep.photoUrl)}
+                                          className="text-[10px] text-[#006b5d] font-bold hover:underline flex items-center gap-1.5 bg-slate-50 border border-slate-100 rounded-lg py-1.5 px-3 w-fit cursor-pointer transition-all hover:bg-slate-100"
+                                        >
+                                          <Layers className="w-3.5 h-3.5 text-[#006b5d]" /> Lihat Lampiran Bukti
+                                        </button>
+                                      </div>
+                                    )}
                                     <div className="flex gap-2">
                                       <span className="bg-slate-50 text-slate-500 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-slate-100 uppercase">
                                         {rep.category === 'pengaduan' ? 'Infrastruktur' : 
@@ -2110,11 +2492,68 @@ export default function App() {
                             {/* Upload banner */}
                             <div className="flex flex-col gap-1.5">
                               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Unggah Gambar / Poster</label>
-                              <div className="border border-dashed border-slate-300 rounded-xl p-4 bg-slate-50/50 flex flex-col items-center justify-center text-center hover:bg-slate-50 transition-colors relative cursor-pointer">
-                                <UploadCloud className="w-6 h-6 text-[#006b5d] mb-1.5" />
-                                <span className="text-xs font-bold text-[#0b1c30]">Klik untuk unggah atau seret file</span>
-                                <span className="text-[9px] text-slate-400 mt-0.5 font-medium">SVG, PNG, JPG (Maks. 5MB)</span>
-                              </div>
+                              
+                              {!infoImage ? (
+                                <div 
+                                  onDragOver={(e) => {
+                                    e.preventDefault();
+                                    setIsDraggingInfo(true);
+                                  }}
+                                  onDragLeave={() => setIsDraggingInfo(false)}
+                                  onDrop={(e) => {
+                                    e.preventDefault();
+                                    setIsDraggingInfo(false);
+                                    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                                      handleInfoImageChange(e.dataTransfer.files[0]);
+                                    }
+                                  }}
+                                  onClick={() => document.getElementById('info-image-input')?.click()}
+                                  className={`border-2 border-dashed rounded-xl p-5 flex flex-col items-center justify-center text-center transition-all duration-300 cursor-pointer relative group ${
+                                    isDraggingInfo 
+                                      ? 'border-[#005146] bg-[#005146]/5' 
+                                      : 'border-slate-300 hover:border-[#006b5d]/50 bg-slate-50/50 hover:bg-slate-50'
+                                  }`}
+                                >
+                                  <input 
+                                    id="info-image-input"
+                                    type="file" 
+                                    accept="image/*"
+                                    onClick={(e) => e.stopPropagation()}
+                                    onChange={(e) => {
+                                      if (e.target.files && e.target.files[0]) {
+                                        handleInfoImageChange(e.target.files[0]);
+                                      }
+                                    }}
+                                    className="hidden" 
+                                  />
+                                  <UploadCloud className="w-8 h-8 text-[#006b5d]/80 group-hover:scale-105 transition-transform mb-2" />
+                                  <span className="text-xs font-bold text-[#0b1c30]">Seret & jatuhkan berkas di sini atau klik</span>
+                                  <span className="text-[10px] text-slate-400 mt-1 font-medium">Maks. 5MB (JPG, PNG)</span>
+                                </div>
+                              ) : (
+                                <div className="relative border border-slate-200 rounded-xl p-3 bg-slate-50/80 flex items-center justify-between gap-3 animate-fadeIn">
+                                  <div className="flex items-center gap-3 min-w-0">
+                                    <img 
+                                      src={infoImage} 
+                                      alt="Lampiran Poster" 
+                                      className="w-12 h-12 rounded-lg object-cover bg-white border border-slate-100 shrink-0 cursor-pointer hover:opacity-90"
+                                      onClick={() => setSelectedProofUrl(infoImage)}
+                                    />
+                                    <div className="min-w-0">
+                                      <p className="text-[11px] font-bold text-slate-800 truncate">Poster Berhasil Dimuat</p>
+                                      <p className="text-[9px] text-slate-400 font-bold uppercase mt-0.5">Klik gambar untuk melihat penuh</p>
+                                    </div>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => setInfoImage('')}
+                                    className="w-7 h-7 rounded-full bg-rose-50 hover:bg-rose-100 text-rose-600 flex items-center justify-center transition-colors shrink-0"
+                                    title="Hapus Gambar"
+                                  >
+                                    <X className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              )}
                             </div>
 
                             {/* Notify toggle */}
@@ -2204,14 +2643,6 @@ export default function App() {
                 </button>
 
                 <button 
-                  onClick={() => { setRole('admin'); setAdminTab('dashboard'); }}
-                  className="flex flex-col items-center gap-1 text-center transition-all text-slate-400 hover:text-slate-600"
-                >
-                  <UserCheck className="w-5 h-5" />
-                  <span className="text-[9px] font-bold uppercase tracking-wider">Admin</span>
-                </button>
-
-                <button 
                   onClick={() => setWargaTab('wallet')}
                   className={`flex flex-col items-center gap-1 text-center transition-all ${
                     wargaTab === 'wallet' ? 'text-[#005146] scale-105 font-bold' : 'text-slate-400 hover:text-slate-600'
@@ -2265,13 +2696,6 @@ export default function App() {
                   <span className="text-[9px] font-bold uppercase tracking-wider">News</span>
                 </button>
 
-                <button 
-                  onClick={() => { setRole('warga'); setWargaTab('home'); }}
-                  className="flex flex-col items-center gap-1 text-center transition-all text-slate-400 hover:text-slate-600"
-                >
-                  <User className="w-5 h-5" />
-                  <span className="text-[9px] font-bold uppercase tracking-wider">Warga</span>
-                </button>
               </div>
             )}
 

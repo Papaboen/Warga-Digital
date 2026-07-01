@@ -46,7 +46,8 @@ service cloud.firestore {
         && data.get('content', '') is string && data.get('content', '').size() <= 8192
         && data.get('isNotified', false) is bool
         && data.get('isDraft', false) is bool
-        && data.get('createdAt', '') is string && data.get('createdAt', '').size() <= 64;
+        && data.get('createdAt', '') is string && data.get('createdAt', '').size() <= 64
+        && (!data.hasAny(['imageUrl']) || data.get('imageUrl', '') is string);
     }
 
     // 2. Collection Match Blocks

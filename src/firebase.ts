@@ -33,8 +33,7 @@ const app = initializeApp(firebaseConfig);
 const db = initializeFirestore(app, {
   localCache: persistentLocalCache({
     tabManager: persistentMultipleTabManager()
-  }),
-  experimentalForceLongPolling: true
+  })
 }, firebaseConfig.firestoreDatabaseId);
 
 // Mock Fallback Data (Indonesian names and values matching mockups)
