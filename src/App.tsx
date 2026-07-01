@@ -43,7 +43,10 @@ import {
   Shield,
   Layers,
   FileSpreadsheet,
-  Coins
+  Coins,
+  LogOut,
+  LogIn,
+  UserPlus
 } from 'lucide-react';
 import { db, bootstrapDatabase, initialResidents, initialTransactions, initialReports, initialInfos } from './firebase';
 import { Resident, Transaction, Report, Info } from './types';
@@ -81,6 +84,10 @@ export default function App() {
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>('qris');
   const [paymentAmount, setPaymentAmount] = useState<number>(150000);
   const [paymentCategory, setPaymentCategory] = useState<string>('Iuran Keamanan & Kebersihan Apr 2024');
+  const [senderName, setSenderName] = useState<string>('Siti Nurhaliza');
+  const [senderBank, setSenderBank] = useState<string>('BCA');
+  const [transferProof, setTransferProof] = useState<string>('');
+  const [selectedProofUrl, setSelectedProofUrl] = useState<string | null>(null);
 
   // Form Inputs: Input Keuangan (Admin RT)
   const [txType, setTxType] = useState<'pemasukan' | 'pengeluaran'>('pemasukan');
@@ -100,6 +107,20 @@ export default function App() {
   const [reportCategory, setReportCategory] = useState<'pengaduan' | 'surat' | 'iuran'>('pengaduan');
   const [reportDetail, setReportDetail] = useState<string>('');
   const [reportFile, setReportFile] = useState<string>('');
+
+  // Authentication & Session States
+  const [authTab, setAuthTab] = useState<'login' | 'signup'>('login');
+  const [loginEmail, setLoginEmail] = useState<string>('warga@gmail.com');
+  const [loginPassword, setLoginPassword] = useState<string>('password');
+  const [signupName, setSignupName] = useState<string>('');
+  const [signupBlock, setSignupBlock] = useState<string>('Block A');
+  const [signupNo, setSignupNo] = useState<string>('');
+  const [signupEmail, setSignupEmail] = useState<string>('');
+  const [signupPassword, setSignupPassword] = useState<string>('');
+  const [signupSuccess, setSignupSuccess] = useState<boolean>(false);
+  const [signupRole, setSignupRole] = useState<'warga' | 'admin'>('warga');
+  const [loggedInResidentName, setLoggedInResidentName] = useState<string>('Siti Nurhaliza');
+  const [loggedInResidentBlock, setLoggedInResidentBlock] = useState<string>('Blok A/12');
 
   // Wallet filters
   const [walletFilter, setWalletFilter] = useState<'semua' | 'berhasil' | 'menunggu'>('semua');
@@ -367,15 +388,25 @@ export default function App() {
     addLog(`Memulai transaksi pembayaran iuran: Rp ${paymentAmount.toLocaleString('id-ID')} via ${selectedPaymentMethod.toUpperCase()}`);
     
     setTimeout(async () => {
+      const isTransfer = selectedPaymentMethod === 'transfer';
+      const isVa = selectedPaymentMethod === 'va';
+      
       const newPayment: Omit<Transaction, 'id'> = {
         type: 'pemasukan',
         category: paymentCategory,
         amount: paymentAmount,
         date: new Date().toISOString().split('T')[0],
-        description: `Pembayaran aman iuran via simulator ${selectedPaymentMethod.toUpperCase()} secara real-time.`,
+        description: isTransfer 
+          ? `Transfer Bank Manual - Pengirim: ${senderName} (Bank: ${senderBank.toUpperCase()}).`
+          : isVa 
+            ? `Transfer Virtual Account BCA - Pengirim: Siti Nurhaliza (Otomatis).`
+            : `Pembayaran aman iuran via QRIS Instan secara real-time.`,
         createdAt: new Date().toISOString(),
         status: 'pending',
-        residentName: 'Siti Nurhaliza'
+        residentName: isTransfer ? senderName : 'Siti Nurhaliza',
+        proofUrl: isTransfer 
+          ? (transferProof || 'https://images.unsplash.com/photo-1628157582853-a796fa650a6a?q=80&w=400&auto=format&fit=crop')
+          : undefined
       };
 
       try {
@@ -445,7 +476,7 @@ export default function App() {
           </div>
           <div>
             <h1 className="font-headline text-lg font-semibold tracking-tight text-white flex items-center gap-1.5">
-              CivicConnect <span className="text-[10px] bg-emerald-500/15 text-emerald-400 px-1.5 py-0.5 rounded-full font-mono border border-emerald-500/25">v1.2</span>
+              Warga Digital <span className="text-[10px] bg-emerald-500/15 text-emerald-400 px-1.5 py-0.5 rounded-full font-mono border border-emerald-500/25">v1.2</span>
             </h1>
             <p className="text-xs text-slate-400">Panel Simulasi Sinkronisasi Real-Time</p>
           </div>
@@ -580,64 +611,340 @@ export default function App() {
               {/* 🚪 LOGIN SCREEN PRE-FLOW   */}
               {/* ========================== */}
               {!isLoggedIn ? (
-                <div className="flex-grow flex flex-col items-center justify-center px-6 pt-10 pb-8 bg-white h-full">
-                  <div className="w-full max-w-sm flex flex-col items-center gap-8">
-                    {/* Brand Logo and Header as in Mockup 8 */}
-                    <div className="flex flex-col items-center text-center gap-3">
-                      <div className="w-24 h-24 flex items-center justify-center bg-[#f8f9ff] rounded-full p-2 border border-slate-100">
-                        <img 
-                          src="https://images.unsplash.com/photo-1582213782179-e0d53f98f2ca?q=80&w=200&auto=format&fit=crop" 
-                          alt="Rukun Tetangga Logo" 
-                          className="w-full h-full object-contain rounded-full"
-                          referrerPolicy="no-referrer"
-                        />
+                <div className="flex-grow flex flex-col items-center justify-center px-6 pt-6 pb-8 bg-white h-full overflow-y-auto">
+                  <div className="w-full max-w-sm flex flex-col items-center gap-6">
+                    {/* Brand Logo and Header */}
+                    <div className="flex flex-col items-center text-center gap-1.5 w-full">
+                      <div className="w-full flex justify-center items-center py-2">
+                        <svg viewBox="0 0 320 180" className="w-52 h-32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          {/* Sparkles / Bintang-bintang */}
+                          <path d="M125 100 L127 93 L134 91 L127 89 L125 82 L123 89 L116 91 L123 93 Z" fill="#b32e6a" opacity="0.8" />
+                          <path d="M158 73 L159 68 L164 67 L159 66 L158 61 L157 66 L152 67 L157 68 Z" fill="#b32e6a" opacity="0.8" />
+                          <path d="M160 125 L161 121 L165 120 L161 119 L160 115 L159 119 L155 120 L159 121 Z" fill="#15a34a" opacity="0.8" />
+
+                          {/* Atap Rumah Pink */}
+                          <path d="M152 72 C175 42 215 42 238 72" stroke="#b32e6a" strokeWidth="6" strokeLinecap="round" fill="none" />
+
+                          {/* Daun-daun di atas kepala */}
+                          <path d="M110 45 C115 35 125 30 135 28" stroke="#15a34a" strokeWidth="2" strokeLinecap="round" fill="none" />
+                          <path d="M122 35 C120 28 126 23 131 26 C134 30 128 37 122 35 Z" fill="#15a34a" />
+                          <path d="M132 28 C132 21 139 18 142 22 C143 27 137 32 132 28 Z" fill="#15a34a" />
+                          <path d="M112 40 C108 34 113 29 118 31 C120 35 115 41 112 40 Z" fill="#b32e6a" />
+                          <path d="M138 38 C138 33 144 30 147 33 C148 37 143 41 138 38 Z" fill="#15a34a" />
+
+                          {/* Kepala Orang Green */}
+                          <circle cx="102" cy="58" r="10" fill="#15a34a" />
+
+                          {/* Tubuh Orang & Infinity & Heart Loops */}
+                          {/* Tubuh & Tangan Orang Green (Left) */}
+                          <path d="M68 52 C85 65 95 80 95 95 C95 125 65 145 45 125 C25 105 45 75 75 105 C105 135 135 145 165 125 C195 105 220 90 235 110 C250 130 230 150 210 150 C185 150 170 130 160 120" stroke="#15a34a" strokeWidth="7" strokeLinecap="round" fill="none" />
+
+                          {/* Pink loop completing the infinity & Heart on right */}
+                          <path d="M68 105 C50 125 35 115 35 100 C35 80 60 75 85 100 C110 125 140 135 165 115 C190 95 210 80 228 100 C245 120 235 140 215 140 C195 140 180 125 170 115" stroke="#b32e6a" strokeWidth="7" strokeLinecap="round" fill="none" />
+
+                          {/* Tangan Kiri Orang Green */}
+                          <path d="M102 68 C98 78 90 88 80 94" stroke="#15a34a" strokeWidth="6" strokeLinecap="round" fill="none" />
+                        </svg>
                       </div>
-                      <h2 className="font-headline text-2xl font-bold tracking-tight text-[#005146]">
-                        RUKUN TETANGGA
-                      </h2>
-                      <p className="text-xs text-slate-500 font-medium">Masuk ke komunitas Anda</p>
+                      <div className="flex flex-col items-center">
+                        <h2 className="font-headline text-lg font-black tracking-[0.1em] text-[#005146] leading-none mb-1">
+                          RUKUN TETANGGA
+                        </h2>
+                        <p className="text-[9px] text-[#b32e6a] font-bold tracking-tight mb-2">
+                          Komunitas Warga Untuk Hidup Selaras & Sehati
+                        </p>
+                        <div className="h-[1px] w-24 bg-slate-200 my-1" />
+                        <span className="text-[11px] text-slate-500 font-bold uppercase tracking-wider mt-1">
+                          WARGA DIGITAL
+                        </span>
+                      </div>
                     </div>
 
-                    {/* Inputs */}
-                    <div className="w-full flex flex-col gap-4">
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-500 mb-1.5">Email atau Nomor Ponsel</label>
-                        <div className="relative">
-                          <input 
-                            type="text" 
-                            placeholder="Masukkan email atau nomor" 
-                            defaultValue="warga@gmail.com" 
-                            className="w-full bg-[#f1f5f9] border border-transparent rounded-xl py-3 px-4 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#006b5d] focus:bg-white text-slate-800"
-                          />
-                        </div>
-                      </div>
-
-                      <div>
-                        <div className="flex justify-between items-center mb-1.5">
-                          <label className="block text-xs font-semibold text-slate-500">Kata Sandi</label>
-                          <a href="#" className="text-xs text-[#0040e0] font-semibold hover:underline">Lupa?</a>
-                        </div>
-                        <div className="relative">
-                          <input 
-                            type="password" 
-                            placeholder="Masukkan kata sandi" 
-                            defaultValue="password" 
-                            className="w-full bg-[#f1f5f9] border border-transparent rounded-xl py-3 px-4 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#006b5d] focus:bg-white text-slate-800"
-                          />
-                        </div>
-                      </div>
+                    {/* Tab Navigation (Login vs Signup) */}
+                    <div className="w-full grid grid-cols-2 p-1 bg-slate-100 rounded-xl border border-slate-200/50">
+                      <button
+                        type="button"
+                        onClick={() => { setAuthTab('login'); setSignupSuccess(false); }}
+                        className={`py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                          authTab === 'login' 
+                            ? 'bg-white text-[#005146] shadow-sm' 
+                            : 'text-slate-500 hover:text-slate-800'
+                        }`}
+                      >
+                        <LogIn className="w-3.5 h-3.5" />
+                        Masuk
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setAuthTab('signup'); setSignupSuccess(false); }}
+                        className={`py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                          authTab === 'signup' 
+                            ? 'bg-white text-[#005146] shadow-sm' 
+                            : 'text-slate-500 hover:text-slate-800'
+                        }`}
+                      >
+                        <UserPlus className="w-3.5 h-3.5" />
+                        Daftar Warga
+                      </button>
                     </div>
 
-                    {/* Submit Button */}
-                    <button 
-                      onClick={() => setIsLoggedIn(true)}
-                      className="w-full bg-[#005146] hover:bg-[#003b33] active:scale-[0.98] text-white font-bold text-sm py-3.5 rounded-xl transition-all shadow-md shadow-[#005146]/10 flex items-center justify-center gap-2"
-                    >
-                      Masuk
-                    </button>
-                    
+                    {/* Success Message Block */}
+                    {signupSuccess && (
+                      <div className="w-full bg-emerald-50 border border-emerald-200 rounded-2xl p-4 flex flex-col gap-3 animate-fadeIn">
+                        <div className="flex items-start gap-2.5">
+                          <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                          <div>
+                            <h4 className="text-xs font-bold text-emerald-900">Registrasi Warga Berhasil!</h4>
+                            <p className="text-[10px] text-emerald-700 leading-relaxed mt-1">
+                              Data pendaftaran Anda atas nama <strong className="font-bold">{signupName}</strong> berhasil dikirim ke basis data RT. Anda dapat langsung menggunakan email ini untuk mencoba login simulasi.
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => { setAuthTab('login'); setSignupSuccess(false); }}
+                          className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-[11px] font-bold transition-all"
+                        >
+                          Lanjut Masuk Sekarang
+                        </button>
+                      </div>
+                    )}
+
+                    {!signupSuccess && (
+                      <form onSubmit={(e) => { e.preventDefault(); }} className="w-full flex flex-col gap-4">
+                        {authTab === 'login' ? (
+                          <>
+                            {/* LOGIN FIELDS */}
+                            <div>
+                              <label className="block text-xs font-semibold text-slate-500 mb-1.5">Email / Nama Warga</label>
+                              <div className="relative">
+                                <input 
+                                  type="text" 
+                                  placeholder="Masukkan email (cth: warga@gmail.com atau admin@gmail.com)" 
+                                  value={loginEmail} 
+                                  onChange={(e) => setLoginEmail(e.target.value)}
+                                  className="w-full bg-[#f1f5f9] border border-slate-200/50 rounded-xl py-3 px-4 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#006b5d] focus:bg-white text-slate-800 transition-all"
+                                  required
+                                />
+                              </div>
+                            </div>
+
+                            <div>
+                              <div className="flex justify-between items-center mb-1.5">
+                                <label className="block text-xs font-semibold text-slate-500">Kata Sandi</label>
+                                <span className="text-[11px] text-[#0040e0] font-semibold cursor-pointer hover:underline">Lupa?</span>
+                              </div>
+                              <div className="relative">
+                                <input 
+                                  type="password" 
+                                  placeholder="Masukkan kata sandi (cth: password)" 
+                                  value={loginPassword} 
+                                  onChange={(e) => setLoginPassword(e.target.value)}
+                                  className="w-full bg-[#f1f5f9] border border-slate-200/50 rounded-xl py-3 px-4 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#006b5d] focus:bg-white text-slate-800 transition-all"
+                                  required
+                                />
+                              </div>
+                            </div>
+
+                            {/* Submit Button */}
+                            <button 
+                              type="button"
+                              onClick={async () => {
+                                // Determine role based on demo keyword, general role, or signup selection
+                                const isDemoAdmin = loginEmail.toLowerCase().includes('admin') || 
+                                                    (signupEmail && loginEmail.toLowerCase() === signupEmail.toLowerCase() && signupRole === 'admin');
+                                if (isDemoAdmin) {
+                                  setRole('admin');
+                                  setIsLoggedIn(true);
+                                  addLog(`Sesi Pengurus RT (${loginEmail}) dimulai.`);
+                                } else {
+                                  setRole('warga');
+                                  // Set user dynamic session if matching signup data, otherwise default
+                                  if (signupName && loginEmail.toLowerCase() === signupEmail.toLowerCase()) {
+                                    setLoggedInResidentName(signupName);
+                                    setLoggedInResidentBlock(`${signupBlock}/${signupNo}`);
+                                  } else {
+                                    setLoggedInResidentName('Siti Nurhaliza');
+                                    setLoggedInResidentBlock('Blok A/12');
+                                  }
+                                  setIsLoggedIn(true);
+                                  addLog(`Sesi warga ${loginEmail} dimulai.`);
+                                }
+                              }}
+                              className="w-full bg-[#005146] hover:bg-[#003b33] active:scale-[0.98] text-white font-bold text-xs py-3.5 rounded-xl transition-all shadow-md shadow-[#005146]/10 flex items-center justify-center gap-2 mt-2"
+                            >
+                              <LogIn className="w-4 h-4" />
+                              Masuk Sekarang
+                            </button>
+
+                            {/* Demo Shortcut Helper */}
+                            <div className="w-full bg-slate-50 border border-slate-200/60 rounded-xl p-3 mt-1 text-center">
+                              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-2">Simulasi Pengguna Cepat:</span>
+                              <div className="flex justify-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setLoginEmail('warga@gmail.com');
+                                    setRole('warga');
+                                    setLoggedInResidentName('Siti Nurhaliza');
+                                    setLoggedInResidentBlock('Blok A/12');
+                                    setIsLoggedIn(true);
+                                    addLog("Sesi Warga Demo dimulai.");
+                                  }}
+                                  className="py-1.5 px-3 bg-white hover:bg-[#005146]/5 text-[#005146] border border-slate-200 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1"
+                                >
+                                  <User className="w-3 h-3" /> Warga Demo
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setLoginEmail('admin@gmail.com');
+                                    setRole('admin');
+                                    setIsLoggedIn(true);
+                                    addLog("Sesi Admin Demo dimulai.");
+                                  }}
+                                  className="py-1.5 px-3 bg-white hover:bg-[#005146]/5 text-[#005146] border border-slate-200 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1"
+                                >
+                                  <Shield className="w-3 h-3" /> Admin RT Demo
+                                </button>
+                              </div>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            {/* SIGNUP FIELDS */}
+                            <div className="flex flex-col gap-3">
+                              <div>
+                                <label className="block text-xs font-semibold text-slate-500 mb-1.5">Pilih Peran (Role)</label>
+                                <div className="grid grid-cols-2 gap-2 bg-[#f1f5f9] p-1 rounded-xl">
+                                  <button
+                                    type="button"
+                                    onClick={() => setSignupRole('warga')}
+                                    className={`py-2 px-3 text-xs font-bold rounded-lg transition-all ${
+                                      signupRole === 'warga'
+                                        ? 'bg-[#005146] text-white shadow-sm'
+                                        : 'text-slate-600 hover:text-slate-800'
+                                    }`}
+                                  >
+                                    Warga (Citizen)
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setSignupRole('admin')}
+                                    className={`py-2 px-3 text-xs font-bold rounded-lg transition-all ${
+                                      signupRole === 'admin'
+                                        ? 'bg-[#b32e6a] text-white shadow-sm'
+                                        : 'text-slate-600 hover:text-slate-800'
+                                    }`}
+                                  >
+                                    Pengurus (RT Admin)
+                                  </button>
+                                </div>
+                              </div>
+
+                              <div>
+                                <label className="block text-xs font-semibold text-slate-500 mb-1">Nama Lengkap Sesuai KTP</label>
+                                <input 
+                                  type="text" 
+                                  placeholder="Masukkan nama lengkap" 
+                                  value={signupName} 
+                                  onChange={(e) => setSignupName(e.target.value)}
+                                  className="w-full bg-[#f1f5f9] border border-slate-200/50 rounded-xl py-2.5 px-3 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#006b5d] focus:bg-white text-slate-800 transition-all"
+                                  required
+                                />
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                  <label className="block text-xs font-semibold text-slate-500 mb-1">Blok Rumah</label>
+                                  <select 
+                                    value={signupBlock} 
+                                    onChange={(e) => setSignupBlock(e.target.value)}
+                                    className="w-full bg-[#f1f5f9] border border-slate-200/50 rounded-xl py-2.5 px-3 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#006b5d] focus:bg-white text-slate-800 transition-all"
+                                  >
+                                    <option value="Block A">Blok A</option>
+                                    <option value="Block B">Blok B</option>
+                                    <option value="Block C">Blok C</option>
+                                    <option value="Block D">Blok D</option>
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-semibold text-slate-500 mb-1">No. Rumah</label>
+                                  <input 
+                                    type="text" 
+                                    placeholder="Contoh: 12" 
+                                    value={signupNo} 
+                                    onChange={(e) => setSignupNo(e.target.value)}
+                                    className="w-full bg-[#f1f5f9] border border-slate-200/50 rounded-xl py-2.5 px-3 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#006b5d] focus:bg-white text-slate-800 transition-all"
+                                    required
+                                  />
+                                </div>
+                              </div>
+
+                              <div>
+                                <label className="block text-xs font-semibold text-slate-500 mb-1">Email Aktif</label>
+                                <input 
+                                  type="email" 
+                                  placeholder="nama@email.com" 
+                                  value={signupEmail} 
+                                  onChange={(e) => setSignupEmail(e.target.value)}
+                                  className="w-full bg-[#f1f5f9] border border-slate-200/50 rounded-xl py-2.5 px-3 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#006b5d] focus:bg-white text-slate-800 transition-all"
+                                  required
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block text-xs font-semibold text-slate-500 mb-1">Kata Sandi Baru</label>
+                                <input 
+                                  type="password" 
+                                  placeholder="Buat sandi minimal 6 karakter" 
+                                  value={signupPassword} 
+                                  onChange={(e) => setSignupPassword(e.target.value)}
+                                  className="w-full bg-[#f1f5f9] border border-slate-200/50 rounded-xl py-2.5 px-3 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#006b5d] focus:bg-white text-slate-800 transition-all"
+                                  required
+                                />
+                              </div>
+                            </div>
+
+                            {/* Submit Button */}
+                            <button 
+                              type="button"
+                              onClick={async () => {
+                                if (!signupName || !signupNo || !signupEmail || !signupPassword) {
+                                  alert("Mohon lengkapi semua bidang isian pendaftaran.");
+                                  return;
+                                }
+                                try {
+                                  // Save to Firestore so it reflects instantly under Admin RT validations!
+                                  const newRes = {
+                                    name: signupName,
+                                    block: signupBlock,
+                                    number: `No. ${signupNo}`,
+                                    submittedAt: 'Baru saja',
+                                    status: signupRole === 'admin' ? 'approved' : 'pending'
+                                  };
+                                  await addDoc(collection(db, 'residents'), newRes);
+                                  addLog(`Pendaftaran ${signupRole === 'admin' ? 'pengurus' : 'warga'} baru dikirim: ${signupName} (${signupBlock}/${signupNo})`);
+                                  setSignupSuccess(true);
+                                } catch (err) {
+                                  console.error("Firestore write failed", err);
+                                  // Local fallback
+                                  addLog(`[Lokal] Pendaftaran ${signupRole === 'admin' ? 'pengurus' : 'warga'} dikirim: ${signupName}`);
+                                  setSignupSuccess(true);
+                                }
+                              }}
+                              className="w-full bg-[#005146] hover:bg-[#003b33] active:scale-[0.98] text-white font-bold text-xs py-3.5 rounded-xl transition-all shadow-md shadow-[#005146]/10 flex items-center justify-center gap-2 mt-2"
+                            >
+                              <UserPlus className="w-4 h-4" />
+                              Kirim Pengajuan Pendaftaran
+                            </button>
+                          </>
+                        )}
+                      </form>
+                    )}
+
                     <div className="text-center">
-                      <p className="text-xs text-slate-400">Hubungi Admin RT untuk pendaftaran warga baru</p>
+                      <p className="text-[10px] text-slate-400">Verifikasi manual disetujui langsung oleh Admin RT setempat</p>
                     </div>
                   </div>
                 </div>
@@ -653,7 +960,7 @@ export default function App() {
                       
                       {/* CivicConnect Header */}
                       <div className="flex items-center justify-between px-6 py-4 bg-[#f8f9ff] sticky top-0 z-20 shrink-0">
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2.5">
                           <button 
                             onClick={() => { setWargaTab('home'); }}
                             className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-700 hover:bg-slate-300 transition-colors"
@@ -661,13 +968,23 @@ export default function App() {
                             <User className="w-4 h-4 text-[#005146]" />
                           </button>
                           <div>
-                            <span className="text-[10px] text-slate-400 block font-semibold">Selamat Datang</span>
-                            <span className="font-headline text-sm font-bold text-[#0b1c30]">Warga Blok A/12</span>
+                            <span className="text-[10px] text-slate-400 block font-semibold leading-tight">Selamat Datang, {loggedInResidentName}</span>
+                            <span className="font-headline text-[11px] font-bold text-[#0b1c30]">{loggedInResidentBlock}</span>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-headline text-base font-bold text-[#005146]">CivicConnect</span>
-                          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-headline text-xs font-bold text-[#005146]">Warga Digital</span>
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                          <button 
+                            onClick={() => {
+                              setIsLoggedIn(false);
+                              addLog(`Sesi warga ${loggedInResidentName} telah berakhir. Pengguna keluar.`);
+                            }}
+                            className="w-7 h-7 rounded-full bg-rose-50 hover:bg-rose-100 flex items-center justify-center text-rose-600 transition-colors ml-1"
+                            title="Keluar Aplikasi"
+                          >
+                            <LogOut className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       </div>
 
@@ -675,42 +992,55 @@ export default function App() {
                       {wargaTab === 'home' && (
                         <div className="px-5 flex flex-col gap-6 pt-2 animate-fadeIn">
                           
-                          {/* Announcement card - Weekly Fogging (Mockup 2) */}
-                          <div className="bg-white rounded-[24px] p-5 shadow-[0_4px_20px_rgba(0,107,93,0.06)] flex flex-col gap-4">
-                            <div className="flex justify-between items-center">
-                              <span className="bg-rose-50 text-[#ba1a1a] text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider flex items-center gap-1">
-                                <span className="w-1.5 h-1.5 rounded-full bg-[#ba1a1a] animate-ping" />
-                                Penting
-                              </span>
-                              <span className="text-[11px] text-slate-400 font-medium font-mono">10 Juli 2024</span>
-                            </div>
+                          {/* Announcement card - Dynamic News from DB */}
+                          {(() => {
+                            const latestPenting = infos.find(i => i.category === 'penting' && !i.isDraft) || infos[0];
+                            if (!latestPenting) return null;
+                            return (
+                              <div className="bg-white rounded-[24px] p-5 shadow-[0_4px_20px_rgba(0,107,93,0.06)] flex flex-col gap-4">
+                                <div className="flex justify-between items-center">
+                                  <span className="bg-rose-50 text-[#ba1a1a] text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider flex items-center gap-1">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-[#ba1a1a] animate-ping" />
+                                    {latestPenting.category}
+                                  </span>
+                                  <span className="text-[11px] text-slate-400 font-medium font-mono">
+                                    {new Date(latestPenting.createdAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                  </span>
+                                </div>
 
-                            <div>
-                              <h3 className="font-headline text-base font-bold text-[#0b1c30] leading-tight mb-2">
-                                Jadwal Fogging Mingguan
-                              </h3>
-                              <p className="text-xs text-slate-500 leading-relaxed line-clamp-3">
-                                Pemberitahuan kepada seluruh warga, fogging rutin akan dilaksanakan pada hari Sabtu, 15 Juli 2024 mulai pukul 08:00 WIB. Mohon untuk menutup makanan dan minuman serta menjaga hewan peliharaan.
-                              </p>
-                            </div>
+                                <div>
+                                  <h3 className="font-headline text-base font-bold text-[#0b1c30] leading-tight mb-2">
+                                    {latestPenting.title}
+                                  </h3>
+                                  <p className="text-xs text-slate-500 leading-relaxed line-clamp-3">
+                                    {latestPenting.content}
+                                  </p>
+                                </div>
 
-                            <div className="w-full h-36 rounded-2xl overflow-hidden bg-slate-100 relative">
-                              <img 
-                                src="https://images.unsplash.com/photo-1596496356942-0f73c5598818?q=80&w=400&auto=format&fit=crop" 
-                                alt="Fogging Announcement Board" 
-                                className="w-full h-full object-cover"
-                                referrerPolicy="no-referrer"
-                              />
-                            </div>
+                                {latestPenting.imageUrl && (
+                                  <div className="w-full h-36 rounded-2xl overflow-hidden bg-slate-100 relative border border-slate-100">
+                                    <img 
+                                      src={latestPenting.imageUrl} 
+                                      alt={latestPenting.title} 
+                                      className="w-full h-full object-cover"
+                                      referrerPolicy="no-referrer"
+                                      onError={(e) => {
+                                        e.currentTarget.src = "https://images.unsplash.com/photo-1513829096960-ef229e5230ab?q=80&w=800";
+                                      }}
+                                    />
+                                  </div>
+                                )}
 
-                            <button 
-                              onClick={() => setSelectedInfo(infos[0] || null)}
-                              className="text-xs font-bold text-[#005146] hover:text-[#003b33] flex items-center gap-1 group self-start transition-all"
-                            >
-                              Baca Selengkapnya 
-                              <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
-                            </button>
-                          </div>
+                                <button 
+                                  onClick={() => setSelectedInfo(latestPenting)}
+                                  className="text-xs font-bold text-[#005146] hover:text-[#003b33] flex items-center gap-1 group self-start transition-all"
+                                >
+                                  Baca Selengkapnya 
+                                  <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+                                </button>
+                              </div>
+                            );
+                          })()}
 
                           {/* Quick Actions (Lapor Kejadian, Minta Surat, Bayar Iuran) */}
                           <div className="grid grid-cols-3 gap-3">
@@ -1203,22 +1533,34 @@ export default function App() {
                       
                       {/* Admin App bar (Mockup 1) */}
                       <div className="flex items-center justify-between px-6 py-4 bg-[#f8f9ff] sticky top-0 z-20 shrink-0">
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2.5">
                           <div className="w-9 h-9 rounded-full bg-[#005146] flex items-center justify-center text-white">
                             <Shield className="w-4 h-4 text-emerald-200" />
                           </div>
                           <div>
                             <span className="font-headline text-sm font-black text-[#005146] block uppercase tracking-wide">ADMIN RT</span>
-                            <span className="text-[10px] text-slate-400 block font-semibold">Dashboard Kepengurusan</span>
+                            <span className="text-[10px] text-slate-400 block font-semibold leading-tight">Dashboard Kepengurusan</span>
                           </div>
                         </div>
-                        <div className="relative hover:opacity-80 transition-opacity" onClick={() => setAdminTab('validation')}>
-                          <Bell className="w-5 h-5 text-slate-700" />
-                          {(pendingResidentsCount + pendingPaymentsCount) > 0 && (
-                            <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-[#ba1a1a] text-white text-[9px] font-bold flex items-center justify-center">
-                              {pendingResidentsCount + pendingPaymentsCount}
-                            </span>
-                          )}
+                        <div className="flex items-center gap-3">
+                          <div className="relative hover:opacity-80 transition-opacity cursor-pointer" onClick={() => setAdminTab('validation')}>
+                            <Bell className="w-5 h-5 text-slate-700" />
+                            {(pendingResidentsCount + pendingPaymentsCount) > 0 && (
+                              <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-[#ba1a1a] text-white text-[9px] font-bold flex items-center justify-center">
+                                {pendingResidentsCount + pendingPaymentsCount}
+                              </span>
+                            )}
+                          </div>
+                          <button 
+                            onClick={() => {
+                              setIsLoggedIn(false);
+                              addLog("Sesi admin telah berakhir. Pengguna keluar.");
+                            }}
+                            className="w-8 h-8 rounded-full bg-rose-50 hover:bg-rose-100 flex items-center justify-center text-rose-600 transition-colors"
+                            title="Keluar Aplikasi"
+                          >
+                            <LogOut className="w-4 h-4" />
+                          </button>
                         </div>
                       </div>
 
@@ -1529,9 +1871,20 @@ export default function App() {
                                           <div>
                                             <h4 className="text-sm font-bold text-[#0b1c30]">{tx.residentName || 'Warga'}</h4>
                                             <p className="text-xs text-[#005146] font-medium mt-0.5">{tx.category}</p>
-                                            <span className="text-[10px] text-slate-400 font-medium block mt-1">
-                                              Diajukan: {new Date(tx.date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
-                                            </span>
+                                            <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                                              <span className="text-[10px] text-slate-400 font-medium">
+                                                Diajukan: {new Date(tx.date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                              </span>
+                                              {tx.proofUrl && (
+                                                <button
+                                                  type="button"
+                                                  onClick={() => setSelectedProofUrl(tx.proofUrl)}
+                                                  className="text-[10px] bg-[#005146]/5 hover:bg-[#005146]/10 text-[#005146] font-bold px-2 py-0.5 rounded transition-all flex items-center gap-1"
+                                                >
+                                                  <FileText className="w-2.5 h-2.5" /> Lihat Bukti
+                                                </button>
+                                              )}
+                                            </div>
                                           </div>
                                         </div>
                                         <div className="text-right">
@@ -1957,6 +2310,9 @@ export default function App() {
                         alt={selectedInfo.title} 
                         className="w-full h-full object-cover"
                         referrerPolicy="no-referrer"
+                        onError={(e) => {
+                          e.currentTarget.src = "https://images.unsplash.com/photo-1513829096960-ef229e5230ab?q=80&w=800";
+                        }}
                       />
                     </div>
                   )}
@@ -2033,10 +2389,115 @@ export default function App() {
                             }`}
                           >
                             <span className="text-xs font-bold text-slate-700">Transfer Virtual Account (BCA, Mandiri)</span>
-                            <span className="text-[9px] text-slate-400 font-mono">Verifikasi Otomatis</span>
+                            <span className="text-[9px] text-[#006b5d] font-bold font-mono bg-emerald-50 px-1.5 py-0.5 rounded uppercase text-[8px]">Otomatis</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setSelectedPaymentMethod('transfer')}
+                            className={`flex justify-between items-center p-3.5 rounded-xl border transition-all text-left ${
+                              selectedPaymentMethod === 'transfer' ? 'border-[#005146] bg-[#005146]/5' : 'border-slate-200 hover:bg-slate-50'
+                            }`}
+                          >
+                            <span className="text-xs font-bold text-slate-700">Transfer Bank Manual (BCA, Mandiri, dll)</span>
+                            <span className="text-[9px] bg-amber-100 text-amber-800 font-bold px-1.5 py-0.5 rounded uppercase">Verifikasi RT</span>
                           </button>
                         </div>
                       </div>
+
+                      {/* Detail Section: Virtual Account */}
+                      {selectedPaymentMethod === 'va' && (
+                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200/60 flex flex-col gap-2.5 animate-fadeIn">
+                          <div className="flex justify-between items-center">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase">Rekening Virtual Account</span>
+                            <span className="text-[10px] text-slate-500 font-bold">BANK BCA</span>
+                          </div>
+                          <div className="flex items-center justify-between bg-white p-3 rounded-lg border border-slate-100">
+                            <span className="font-mono text-xs font-black text-slate-800">88301 08123456789</span>
+                            <button 
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText('8830108123456789');
+                                alert('Nomor Virtual Account disalin!');
+                              }}
+                              className="text-[10px] font-bold text-[#005146] hover:underline"
+                            >
+                              Salin
+                            </button>
+                          </div>
+                          <p className="text-[10px] text-slate-400 leading-relaxed">
+                            Pemberitahuan: Setelah menekan tombol bayar di bawah, pembayaran akan terverifikasi secara otomatis oleh sistem kami.
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Detail Section: Manual Transfer Form */}
+                      {selectedPaymentMethod === 'transfer' && (
+                        <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/60 flex flex-col gap-4 animate-fadeIn">
+                          <div className="flex flex-col gap-1.5">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase">Kirim Transfer Ke Rekening RT</span>
+                            <div className="bg-white p-3 rounded-xl border border-slate-100 flex flex-col gap-1.5">
+                              <div className="flex justify-between items-center text-xs">
+                                <span className="font-bold text-slate-700">Bank BCA</span>
+                                <span className="font-mono font-bold text-[#005146]">812-345-6789</span>
+                              </div>
+                              <div className="flex justify-between items-center text-xs border-t border-slate-50 pt-1.5">
+                                <span className="font-bold text-slate-700">Bank Mandiri</span>
+                                <span className="font-mono font-bold text-[#005146]">132-00-1234567-8</span>
+                              </div>
+                              <div className="text-[10px] text-slate-400 text-center mt-0.5">Atas Nama: <strong>KAS KEUANGAN RT 05</strong></div>
+                            </div>
+                          </div>
+
+                          {/* Inputs */}
+                          <div className="grid grid-cols-2 gap-2.5">
+                            <div className="flex flex-col gap-1">
+                              <label className="text-[9px] font-bold text-slate-400 uppercase">Nama Pengirim</label>
+                              <input 
+                                type="text"
+                                value={senderName}
+                                onChange={(e) => setSenderName(e.target.value)}
+                                className="bg-white border border-slate-200 rounded-lg p-2.5 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#005146]"
+                                placeholder="Nama pengirim"
+                              />
+                            </div>
+                            <div className="flex flex-col gap-1">
+                              <label className="text-[9px] font-bold text-slate-400 uppercase">Bank Pengirim</label>
+                              <select 
+                                value={senderBank}
+                                onChange={(e) => setSenderBank(e.target.value)}
+                                className="bg-white border border-slate-200 rounded-lg p-2.5 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#005146]"
+                              >
+                                <option value="BCA">BCA</option>
+                                <option value="MANDIRI">MANDIRI</option>
+                                <option value="BRI">BRI</option>
+                                <option value="BNI">BNI</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          {/* Bukti Transfer attachment */}
+                          <div className="flex flex-col gap-1">
+                            <label className="text-[9px] font-bold text-slate-400 uppercase">Unggah Bukti Transfer</label>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setTransferProof('https://images.unsplash.com/photo-1628157582853-a796fa650a6a?q=80&w=400&auto=format&fit=crop');
+                                alert('Bukti transfer simulasi berhasil terlampir!');
+                              }}
+                              className={`border border-dashed p-3.5 rounded-xl flex flex-col items-center justify-center text-center transition-colors ${
+                                transferProof ? 'border-emerald-500 bg-emerald-50/40 text-emerald-800' : 'border-slate-300 hover:bg-slate-100 bg-white text-slate-600'
+                              }`}
+                            >
+                              <UploadCloud className={`w-5 h-5 mb-1 ${transferProof ? 'text-emerald-600 animate-bounce' : 'text-slate-400'}`} />
+                              <span className="text-[11px] font-bold">
+                                {transferProof ? 'Bukti Pembayaran Terlampir!' : 'Unggah Bukti (Klik Simulasi)'}
+                              </span>
+                              <span className="text-[8px] text-slate-400 mt-0.5">Klik untuk otomatis menyematkan struk transfer simulasi</span>
+                            </button>
+                          </div>
+                        </div>
+                      )}
 
                       <button 
                         onClick={handleSimulatePayment}
@@ -2095,6 +2556,44 @@ export default function App() {
                     </div>
                   )}
 
+                </div>
+              </div>
+            )}
+
+            {/* Modal: View Transfer Proof Receipt */}
+            {selectedProofUrl && (
+              <div className="absolute inset-0 bg-black/75 backdrop-blur-sm z-[60] flex items-center justify-center p-6 animate-fadeIn">
+                <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl flex flex-col animate-slideUp">
+                  <div className="flex justify-between items-center p-4 border-b border-slate-100 bg-slate-50">
+                    <h3 className="text-xs font-bold text-[#0b1c30]">Bukti Transfer Pembayaran</h3>
+                    <button 
+                      type="button"
+                      onClick={() => setSelectedProofUrl(null)}
+                      className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center hover:bg-slate-300 transition-colors"
+                    >
+                      <X className="w-4 h-4 text-slate-600" />
+                    </button>
+                  </div>
+                  <div className="p-4 flex justify-center bg-slate-100 max-h-[360px] overflow-hidden items-center">
+                    <img 
+                      src={selectedProofUrl} 
+                      alt="Struk Bukti Transfer" 
+                      className="max-h-[320px] object-contain rounded shadow border border-slate-200/50"
+                      referrerPolicy="no-referrer"
+                    />
+                  </div>
+                  <div className="p-4 border-t border-slate-100 flex flex-col gap-2 bg-slate-50">
+                    <div className="text-[10px] text-slate-400 font-medium leading-relaxed">
+                      Sistem real-time memvalidasi kecocokan data pengirim dengan status verifikasi manual oleh RT Admin.
+                    </div>
+                    <button 
+                      type="button"
+                      onClick={() => setSelectedProofUrl(null)}
+                      className="w-full py-2.5 bg-[#005146] hover:bg-[#003b33] text-white rounded-xl text-xs font-bold transition-all"
+                    >
+                      Tutup Pratinjau
+                    </button>
+                  </div>
                 </div>
               </div>
             )}

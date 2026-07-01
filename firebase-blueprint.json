@@ -1,0 +1,83 @@
+{
+  "entities": {
+    "Resident": {
+      "title": "Resident",
+      "description": "Resident registration",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "block": { "type": "string" },
+        "number": { "type": "string" },
+        "submittedAt": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "photoUrl": { "type": "string" }
+      },
+      "required": ["name", "block", "number", "submittedAt", "status"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Financial transaction",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["pemasukan", "pengeluaran"] },
+        "category": { "type": "string" },
+        "amount": { "type": "number" },
+        "date": { "type": "string" },
+        "description": { "type": "string" },
+        "proofUrl": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "residentName": { "type": "string" }
+      },
+      "required": ["type", "category", "amount", "date", "description", "createdAt"]
+    },
+    "Report": {
+      "title": "Report",
+      "description": "Resident complaint or letter request",
+      "type": "object",
+      "properties": {
+        "category": { "type": "string", "enum": ["pengaduan", "surat", "iuran"] },
+        "detail": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "process", "done"] },
+        "submittedAt": { "type": "string" },
+        "photoUrl": { "type": "string" },
+        "title": { "type": "string" },
+        "blockAndNo": { "type": "string" }
+      },
+      "required": ["category", "detail", "status", "submittedAt", "title"]
+    },
+    "Info": {
+      "title": "Info",
+      "description": "RT Bulletin/News item",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "category": { "type": "string", "enum": ["penting", "umum", "kegiatan"] },
+        "content": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "isNotified": { "type": "boolean" },
+        "isDraft": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["title", "category", "content", "isNotified", "isDraft", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/residents/{residentId}": {
+      "schema": "Resident",
+      "description": "Collection of resident registrations"
+    },
+    "/transactions/{transactionId}": {
+      "schema": "Transaction",
+      "description": "Collection of financial transactions"
+    },
+    "/reports/{reportId}": {
+      "schema": "Report",
+      "description": "Collection of resident reports and letter requests"
+    },
+    "/infos/{infoId}": {
+      "schema": "Info",
+      "description": "Collection of RT bulletin board items"
+    }
+  }
+}

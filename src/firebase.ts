@@ -29,12 +29,13 @@ const firebaseConfig = {
 // Initialize Firebase App
 const app = initializeApp(firebaseConfig);
 
-// Initialize Firestore with local persistent cache for smoother performance
+// Initialize Firestore with local persistent cache and forced long-polling for iframe/sandbox compatibility
 const db = initializeFirestore(app, {
   localCache: persistentLocalCache({
     tabManager: persistentMultipleTabManager()
-  })
-});
+  }),
+  experimentalForceLongPolling: true
+}, firebaseConfig.firestoreDatabaseId);
 
 // Mock Fallback Data (Indonesian names and values matching mockups)
 export const initialResidents: Resident[] = [
@@ -72,7 +73,7 @@ export const initialInfos: Info[] = [
     title: 'Jadwal Fogging Mingguan',
     category: 'penting',
     content: 'Pemberitahuan kepada seluruh warga, fogging rutin akan dilaksanakan pada hari Sabtu, 15 Juli 2024 mulai pukul 08:00 WIB. Mohon untuk menutup makanan dan minuman serta menjaga hewan peliharaan.',
-    imageUrl: 'https://images.unsplash.com/photo-1596496356942-0f73c5598818?q=80&w=600&auto=format&fit=crop', // A nice bulletin/notice board image as in the mockup
+    imageUrl: 'https://images.unsplash.com/photo-1513829096960-ef229e5230ab?q=80&w=800', // A nice residential area image
     isNotified: true,
     isDraft: false,
     createdAt: '2024-07-10T08:00:00Z'

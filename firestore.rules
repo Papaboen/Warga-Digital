@@ -1,0 +1,81 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper: ID Validation
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Helper: Schema Validation for Resident
+    function isValidResident(data) {
+      return data.get('name', '') is string && data.get('name', '').size() <= 128
+        && data.get('block', '') is string && data.get('block', '').size() <= 32
+        && data.get('number', '') is string && data.get('number', '').size() <= 32
+        && data.get('submittedAt', '') is string && data.get('submittedAt', '').size() <= 64
+        && data.get('status', '') is string && (data.get('status', '') == 'pending' || data.get('status', '') == 'approved' || data.get('status', '') == 'rejected');
+    }
+
+    // Helper: Schema Validation for Transaction
+    function isValidTransaction(data) {
+      return data.get('type', '') is string && (data.get('type', '') == 'pemasukan' || data.get('type', '') == 'pengeluaran')
+        && data.get('category', '') is string && data.get('category', '').size() <= 256
+        && data.get('amount', 0) is number && data.get('amount', 0) >= 0
+        && data.get('date', '') is string && data.get('date', '').size() <= 32
+        && data.get('description', '') is string && data.get('description', '').size() <= 1024
+        && data.get('createdAt', '') is string && data.get('createdAt', '').size() <= 64;
+    }
+
+    // Helper: Schema Validation for Report
+    function isValidReport(data) {
+      return data.get('category', '') is string && (data.get('category', '') == 'pengaduan' || data.get('category', '') == 'surat' || data.get('category', '') == 'iuran')
+        && data.get('detail', '') is string && data.get('detail', '').size() <= 4096
+        && data.get('status', '') is string && (data.get('status', '') == 'pending' || data.get('status', '') == 'process' || data.get('status', '') == 'done')
+        && data.get('submittedAt', '') is string && data.get('submittedAt', '').size() <= 64
+        && data.get('title', '') is string && data.get('title', '').size() <= 256;
+    }
+
+    // Helper: Schema Validation for Info
+    function isValidInfo(data) {
+      return data.get('title', '') is string && data.get('title', '').size() <= 256
+        && data.get('category', '') is string && (data.get('category', '') == 'penting' || data.get('category', '') == 'umum' || data.get('category', '') == 'kegiatan')
+        && data.get('content', '') is string && data.get('content', '').size() <= 8192
+        && data.get('isNotified', false) is bool
+        && data.get('isDraft', false) is bool
+        && data.get('createdAt', '') is string && data.get('createdAt', '').size() <= 64;
+    }
+
+    // 2. Collection Match Blocks
+    match /residents/{residentId} {
+      allow read: if true;
+      allow create: if isValidResident(request.resource.data);
+      allow update: if isValidResident(request.resource.data);
+      allow delete: if true;
+    }
+
+    match /transactions/{transactionId} {
+      allow read: if true;
+      allow create: if isValidTransaction(request.resource.data);
+      allow update: if isValidTransaction(request.resource.data);
+      allow delete: if true;
+    }
+
+    match /reports/{reportId} {
+      allow read: if true;
+      allow create: if isValidReport(request.resource.data);
+      allow update: if isValidReport(request.resource.data);
+      allow delete: if true;
+    }
+
+    match /infos/{infoId} {
+      allow read: if true;
+      allow create: if isValidInfo(request.resource.data);
+      allow update: if isValidInfo(request.resource.data);
+      allow delete: if true;
+    }
+  }
+}
